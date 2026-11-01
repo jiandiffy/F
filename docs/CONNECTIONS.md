@@ -34,6 +34,6 @@ GitHub 发布来自用户界面的明确上传操作；首次创建私有仓库�
 ./pi/runtime/node/bin/node --test harness/tests/datasets.test.mjs harness/tests/versions.test.mjs
 ```
 
-10 项测试覆盖数据并发更新、证据保留、排序、提供方释放、Zotero 元数据映射、arXiv XML 解析、真实 Git 分支合并、父仓库隔离、范围/符号链接/凭据拒绝、并发版本树和测试失败现场保留。真实服务检查记录位于维护时生成的 `/tmp/f-datasets-live-report.json`。
+测试覆盖数据并发更新、证据保留、排序、提供方释放、Zotero 元数据映射、arXiv XML 解析、真实 Git 分支合并、父仓库隔离、范围/符号链接/凭据拒绝、并发版本树和测试失败现场保留。真实服务检查记录位于维护时生成的 `/tmp/f-datasets-live-report.json`。
 
 接口依据：[GitHub Code Search](https://docs.github.com/en/rest/search/search?apiVersion=2022-11-28#search-code)、[Zotero API v3](https://www.zotero.org/support/dev/web_api/v3/basics)、[arXiv API](https://info.arxiv.org/help/api/user-manual.html)。

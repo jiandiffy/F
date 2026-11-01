@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const execute = promisify(execFile);
 export async function command(file, args, { trim = true, ...options } = {}) {
@@ -44,7 +45,7 @@ export async function captureGithub({ repository, file, ref = 'HEAD', startLine 
   const selected = lines.slice(startLine - 1, end).join('\n');
   return { dataset: 'code', title: title || path.basename(file), summary, tags, content: selected,
     source: { provider: 'github', repository, commit: commit.sha, file, startLine, endLine: end,
-      url: `https://github.com/${repository}/blob/${commit.sha}/${file}#L${startLine}-L${end}`,
+      url: `https://github.com/${repository}/blob/${commit.sha}/${file.split('/').map(encodeURIComponent).join('/')}#L${startLine}-L${end}`,
       sha256: createHash('sha256').update(selected).digest('hex') } };
 }
 
@@ -75,7 +76,11 @@ export function zoteroProvider({ root, baseURL = 'http://127.0.0.1:23119/api/', 
   };
 }
 
-const xmlText = value => (value ?? '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]+>/g, '').replace(/&#(x[\da-f]+|\d+);/gi, (_, n) => String.fromCodePoint(n[0].toLowerCase() === 'x' ? parseInt(n.slice(1), 16) : Number(n))).replace(/&(amp|lt|gt|quot|apos);/g, (_, x) => ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" })[x]).replace(/\s+/g, ' ').trim();
+const xmlText = value => (value ?? '')
+  .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_, text) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'))
+  .replace(/<[^>]+>/g, '')
+  .replace(/&#(x[\da-f]+|\d+);/gi, (_, n) => String.fromCodePoint(n[0].toLowerCase() === 'x' ? parseInt(n.slice(1), 16) : Number(n)))
+  .replace(/&(amp|lt|gt|quot|apos);/g, (_, x) => ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" })[x]).replace(/\s+/g, ' ').trim();
 export function parseArxiv(xml) {
   const tag = (body, name) => xmlText(body.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${name}>`))?.[1]);
   return [...xml.matchAll(/<entry(?:\s[^>]*)?>([\s\S]*?)<\/entry>/g)].map(([, body]) => ({
@@ -86,12 +91,17 @@ export function parseArxiv(xml) {
   }));
 }
 export function arxivProvider() {
-  let lastRequest = 0;
+  let lastRequest = 0, queue = Promise.resolve();
   return { name: 'arxiv', description: 'Search arXiv primary paper metadata and abstracts for research; adds cited metadata to the paper dataset on request.',
     async search(query, { limit = 10, signal } = {}) {
-      const delay = Math.max(0, 3100 - (Date.now() - lastRequest));
-      if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-      lastRequest = Date.now();
+      const start = queue.then(async () => {
+        signal?.throwIfAborted();
+        const wait = Math.max(0, 3100 - (Date.now() - lastRequest));
+        if (wait) await delay(wait, undefined, { signal });
+        lastRequest = Date.now();
+      });
+      queue = start.catch(() => {});
+      await start;
       const url = new URL('https://export.arxiv.org/api/query');
       url.search = new URLSearchParams({ search_query: query, start: '0', max_results: String(Math.min(50, Math.max(1, limit))), sortBy: 'relevance' });
       const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000), headers: { 'User-Agent': 'F-AIOS/1.0 (research metadata client)' } });

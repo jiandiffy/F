@@ -6,6 +6,7 @@ import { applicationData, atomicJSON, withLock } from '../datasets/store.mjs';
 
 const validRepo = value => /^[\w.-]+\/[\w.-]+$/.test(value);
 const gitIdentity = ['-c', 'user.name=F', '-c', 'user.email=f@localhost'];
+const secrets = /(^|\/)(auth\.json|credentials[^/]*|.*api[-_]key.*|\.env(?:\..*)?|id_(?:rsa|ed25519)|signing-keychain-password)(\/|$)/i;
 const cleanPath = value => {
   if (typeof value !== 'string' || !value || value.includes('\0') || path.isAbsolute(value) || value.split(/[\\/]/).some(p => p === '..' || p === '.git')) throw new Error('File scope must be project-relative, without .. or .git');
   return value.replace(/^\.\//, '').replace(/\/$/, '') || '.';
@@ -93,7 +94,6 @@ export class VersionProject {
       for (const file of paths) if (!node.paths.some(scope => contains(scope, file))) throw new Error('Commit path is outside the assigned scope');
       // Check symlinks and tracked/untracked file paths before staging any requested scope.
       const files = (await this.git(['ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', ...paths], node.worktree)).split('\0').filter(Boolean);
-      const secrets = /(^|\/)(auth\.json|credentials[^/]*|.*api[-_]key.*|\.env(?:\..*)?|id_(?:rsa|ed25519)|signing-keychain-password)(\/|$)/i;
       if (files.some(file => secrets.test(file))) throw new Error('Selected files include credentials. Narrow the commit scope or add private files to .gitignore.');
       for (const file of files) {
         const full = path.join(node.worktree, file);
@@ -107,6 +107,25 @@ export class VersionProject {
       return { node: id, commit: await this.git(['rev-parse', 'HEAD'], node.worktree), paths };
     });
   }
+  async validationState(node) {
+    const pending = await this.git(['rev-parse', '--git-path', 'MERGE_HEAD'], node.worktree);
+    let mergeHead = null;
+    try { mergeHead = await readFile(path.resolve(node.worktree, pending), 'utf8'); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    return {
+      head: await this.git(['rev-parse', 'HEAD'], node.worktree),
+      branch: await this.git(['symbolic-ref', '--short', 'HEAD'], node.worktree),
+      index: await this.git(['ls-files', '--stage', '-z'], node.worktree),
+      indexFlags: await this.git(['ls-files', '-v', '-z'], node.worktree),
+      worktree: await this.git(['diff', '--no-ext-diff', '--no-textconv', '--binary', '--no-renames'], node.worktree, { trim: false }),
+      status: await this.git(['status', '--porcelain=v1', '-z', '--untracked-files=all'], node.worktree),
+      mergeHead,
+    };
+  }
+  async assertValidationState(node, expected) {
+    const actual = await this.validationState(node);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`Validation test changed HEAD, index or worktree in ${node.worktree}; all changes remain for explicit repair`);
+  }
   async merge({ node: id, test }) {
     await this.verify();
     if (!Array.isArray(test) || !test.length || test.some(value => typeof value !== 'string')) throw new Error('Merge requires an actual test command as an argv array');
@@ -114,17 +133,26 @@ export class VersionProject {
       const state = await this.state(), source = await this.node(id);
       if (!source.parent) throw new Error('Root has no parent to merge into');
       const target = await this.node(source.parent);
-      for (const node of [source, target]) if (await this.git(['status', '--porcelain'], node.worktree)) throw new Error('Commit or resolve worktree changes before merging');
-      const changed = (await this.git(['diff', '--no-renames', '--name-only', '-z', `${source.base}..${source.branch}`])).split('\0').filter(Boolean);
+      const sourceBefore = await this.validationState(source), targetBefore = await this.validationState(target);
+      for (const snapshot of [sourceBefore, targetBefore]) {
+        // These flags hide worktree mutations from both diff and status.
+        if (snapshot.indexFlags.split('\0').some(entry => /^[a-zS] /.test(entry))) throw new Error('Clear assume-unchanged and skip-worktree flags before merging; files and index remain unchanged');
+        if (snapshot.status || snapshot.worktree || snapshot.mergeHead) throw new Error('Commit or resolve worktree changes before merging');
+      }
+      const changed = (await this.git(['diff', '--no-renames', '--name-only', '-z', `${source.base}..${sourceBefore.head}`])).split('\0').filter(Boolean);
       if (changed.some(file => !source.paths.some(scope => contains(scope, file)))) throw new Error('Branch changes exceed its assigned file scope');
+      if (changed.some(file => secrets.test(file))) throw new Error('Branch changes include credentials; narrow the changes before merging');
       await this.run(test[0], test.slice(1), { cwd: source.worktree });
-      // A failed merge/test is left explicitly pending for repair; never reset or discard files.
-      await this.git([...gitIdentity, 'merge', '--no-ff', '--no-commit', source.branch], target.worktree);
+      await this.assertValidationState(source, sourceBefore);
+      await this.assertValidationState(target, targetBefore);
+      // Merge only the validated commit. A failed merge/test stays pending; never reset or discard files.
+      await this.git([...gitIdentity, 'merge', '--no-ff', '--no-commit', sourceBefore.head], target.worktree);
       try {
+        const merged = await this.validationState(target);
         const output = await this.run(test[0], test.slice(1), { cwd: target.worktree });
-        const pending = await this.git(['rev-parse', '--git-path', 'MERGE_HEAD'], target.worktree);
-        let hasMerge = false; try { await lstat(path.resolve(target.worktree, pending)); hasMerge = true; } catch (error) { if (error.code !== 'ENOENT') throw error; }
-        if (hasMerge) await this.git([...gitIdentity, 'commit', '-m', `Merge ${source.label}`], target.worktree);
+        await this.assertValidationState(source, sourceBefore);
+        await this.assertValidationState(target, merged);
+        if (merged.mergeHead) await this.git([...gitIdentity, 'commit', '-m', `Merge ${source.label}`], target.worktree);
         source.mergedAt = new Date().toISOString(); source.validation = { command: test, output: output.slice(-12000), passed: true };
         state.nodes[state.nodes.findIndex(n => n.id === id)] = source; await atomicJSON(this.metadata, state);
         return { source: id, target: target.id, commit: await this.git(['rev-parse', 'HEAD'], target.worktree), validation: source.validation };

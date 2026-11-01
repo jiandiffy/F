@@ -2,10 +2,17 @@ import { Context, Service } from '../../dist/upstream.mjs';
 
 export class ToolRegistry extends Service {
   entries = new Map();
+  managedNames = new Set();
+  listeners = new Set();
   constructor(ctx, pi) { super(ctx, 'tools'); this.pi = pi; }
+  onChange(listener) {
+    return this.ctx.effect(() => { this.listeners.add(listener); return () => this.listeners.delete(listener); });
+  }
+  changed(event) { for (const listener of this.listeners) listener(event); }
   register(definition) {
     if (this.entries.has(definition.name)) throw new Error(`Duplicate tool: ${definition.name}`);
     return this.ctx.effect(() => {
+      this.managedNames.add(definition.name);
       this.entries.set(definition.name, definition);
       this.pi.registerTool({ ...definition, execute: (...args) => {
         const current = this.entries.get(definition.name);
@@ -14,9 +21,14 @@ export class ToolRegistry extends Service {
         if (bus?.context && !bus.isActive(definition.name)) throw new Error(`Activate this capability with bus before calling ${definition.name}`);
         return current.execute(...args);
       }});
+      // Pi activates direct tools at registration. A late plugin cannot bypass the
+      // established bus selection before its synchronous lifecycle notification.
+      if (this.ctx.get('bus')?.context) this.pi.setActiveTools(this.pi.getActiveTools().filter(name => name !== definition.name));
+      this.changed({ type: 'registered', name: definition.name });
       return () => {
         this.entries.delete(definition.name);
         this.pi.setActiveTools(this.pi.getActiveTools().filter(name => name !== definition.name));
+        this.changed({ type: 'unloaded', name: definition.name });
       };
     });
   }

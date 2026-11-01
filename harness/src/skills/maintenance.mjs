@@ -13,6 +13,29 @@ const canonical = p => {
   catch (e) { if (e.code !== 'ENOENT') throw e; return path.join(canonical(path.dirname(p)), path.basename(p)); }
 };
 
+// Compatibility entry points only identify the source; edits still require canonical paths.
+export function maintenanceSourceContext(root, cwd) {
+  root = canonical(root); cwd = canonical(cwd);
+  return within(cwd, root) || ['gui-mac', 'pi', 'F_MAINTENANCE.md'].every(name => canonical(path.join(cwd, name)) === path.join(root, name));
+}
+
+// Private event identity plus the exact transformed command prevents a model input
+// field (or an intervening command change) from pretending a shell is protected.
+const guardedShells = new WeakMap();
+export function maintenanceShellGuard(event) {
+  const guard = guardedShells.get(event);
+  return guard?.command === event.input.command ? guard : undefined;
+}
+export function extendMaintenanceShell(event, additionalRules) {
+  const guard = maintenanceShellGuard(event);
+  if (!guard) return false;
+  if (guard.mode !== 'sandbox') return true; // Exact publisher or genuinely read-only fallback.
+  guard.rules += additionalRules;
+  event.input.command = guardedBash(guard.original, guard.root, { allowPublish: false, additionalRules: guard.rules });
+  guard.command = event.input.command;
+  return true;
+}
+
 export function coordinate(root, owner, action, args = {}) {
   try {
     return JSON.parse(execFileSync('/usr/bin/python3', ['-B', lockScript, root, owner, action, JSON.stringify(args)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
@@ -39,7 +62,7 @@ export function hasSandbox() {
   return sandboxAvailable;
 }
 
-export function guardedBash(command, root, { sandbox = hasSandbox(), home = os.homedir(), allowPublish = true } = {}) {
+export function guardedBash(command, root, { sandbox = hasSandbox(), home = os.homedir(), allowPublish = true, additionalRules = '' } = {}) {
   const publish = allowPublish && publicationCommand(command, root);
   if (publish) return publish; // Python acquires publication lock + lease freeze before any build.
   if (!sandbox) {
@@ -52,7 +75,7 @@ export function guardedBash(command, root, { sandbox = hasSandbox(), home = os.h
   }
   const protectedPaths = [root, path.join(home, 'Library/Application Support/F/maintenance/coordination'),
     path.join(home, 'Library/Application Support/F/updates')].map(canonical);
-  const profile = '(version 1)(allow default)' + protectedPaths.map(p => `(deny file-write* (subpath ${JSON.stringify(p)}))`).join('');
+  const profile = '(version 1)(allow default)' + protectedPaths.map(p => `(deny file-write* (subpath ${JSON.stringify(p)}))`).join('') + additionalRules;
   // -c, not -lc: no unsandboxed startup file is sourced by this inner shell.
   return `/usr/bin/sandbox-exec -p ${quote(profile)} /bin/bash --noprofile --norc -c ${quote(command)}`;
 }
@@ -65,7 +88,7 @@ export async function mountMaintenance(ctx, { root, coordinator = coordinate }) 
     let registered = false;
     const identity = context => Number(process.env.F_AGENT_DEPTH ?? 0) > 0 && process.env.F_AGENT_ID
       ? process.env.F_AGENT_ID : context.sessionManager.getSessionId();
-    const inSource = context => !process.env.F_REMOTE_PROJECT && within(canonical(context.cwd), root);
+    const inSource = context => !process.env.F_REMOTE_PROJECT && maintenanceSourceContext(root, context.cwd);
     const enroll = () => {
       if (registered) return;
       registered = true;
@@ -89,14 +112,17 @@ export async function mountMaintenance(ctx, { root, coordinator = coordinate }) 
     };
     ctx.host.on(ctx, 'before_agent_start', (_event, context) => { if (inSource(context)) enroll(); });
     ctx.systemPrompt.register('f-maintenance-scopes', (_event, context) => inSource(context)
-      ? '\nF 源码编辑必须先用 maintenance_scope claim 明确文件/目录范围，并在获得租约后重新 read 最新文件，禁止用拿锁前缓存整文件覆盖前一持有者修改；不同插件范围可并行，同插件和相交范围拒绝。write/edit 实际调用受租约检查。bash 对源码强制只读（不支持沙箱时仅简单只读命令）；测试输出请放临时目录。向直属子代理 delegate 后父会话不能编辑转授范围，完成请 release。发布仅主会话使用单独 prepare-update.py 命令，需其他租约全部释放；不要删除他人租约或 pending。\n' : '');
+      ? `\nF 源码规范路径为 ${root}；旧目录只用于定位，read/write/edit 必须使用规范路径，不能通过兼容符号链接编辑。\nF 源码编辑必须先用 maintenance_scope claim 明确文件/目录范围，并在获得租约后重新 read 最新文件，禁止用拿锁前缓存整文件覆盖前一持有者修改；不同插件范围可并行，同插件和相交范围拒绝。write/edit 实际调用受租约检查。bash 对源码强制只读（不支持沙箱时仅简单只读命令）；测试输出请放临时目录。向直属子代理 delegate 后父会话不能编辑转授范围，完成请 release。发布仅主会话使用单独 prepare-update.py 命令，需其他租约全部释放；不要删除他人租约或 pending。\n` : '');
     ctx.host.on(ctx, 'tool_call', (event, context) => {
       if (process.env.F_REMOTE_PROJECT) return;
       try {
         if (event.toolName === 'bash') {
           // Protect F even when a local session changes cwd or invokes an absolute path.
-          event.input.command = guardedBash(String(event.input.command ?? ''), root,
-            { allowPublish: canonical(context.cwd) === root && !process.env.F_UPDATE_DELEGATED && Number(process.env.F_AGENT_DEPTH ?? 0) === 0 });
+          const original = String(event.input.command ?? '');
+          const allowPublish = inSource(context) && !process.env.F_UPDATE_DELEGATED && Number(process.env.F_AGENT_DEPTH ?? 0) === 0;
+          event.input.command = guardedBash(original, root, { allowPublish });
+          const mode = allowPublish && publicationCommand(original, root) ? 'publication' : hasSandbox() ? 'sandbox' : 'read-only';
+          guardedShells.set(event, { root, original, command: event.input.command, mode, rules: '' });
           return;
         }
         if (!['write', 'edit'].includes(event.toolName)) return;

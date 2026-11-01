@@ -83,6 +83,7 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
         let baseline: Data?
         let project: URL
         let baselineID: String?
+        var reloadAfterSave: Bool
         var completions: [() -> Void]
     }
     private var pendingWrites: [URL: PendingWrite] = [:]
@@ -408,7 +409,7 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
         return path
     }
 
-    private func persistScene(_ json: String, baseline: Data? = nil, baselineID: String? = nil, completion: (() -> Void)? = nil) {
+    private func persistScene(_ json: String, baseline: Data? = nil, baselineID: String? = nil, reloadAfterSave: Bool = false, completion: (() -> Void)? = nil) {
         if let baselineID, sceneBaselines[baselineID] == nil { completion?(); return }
         guard let sceneURL,
               let incoming = json.data(using: .utf8),
@@ -416,11 +417,13 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
         else { completion?(); return }
         if var pending = pendingWrites[sceneURL] {
             pending.object = object
+            pending.reloadAfterSave = pending.reloadAfterSave || reloadAfterSave
             if let completion { pending.completions.append(completion) }
             pendingWrites[sceneURL] = pending
         } else {
             pendingWrites[sceneURL] = PendingWrite(object: object, baseline: baselineID.flatMap { sceneBaselines[$0] } ?? baseline ?? lastSceneData,
-                project: projectURL, baselineID: baselineID, completions: completion.map { [$0] } ?? [])
+                project: projectURL, baselineID: baselineID, reloadAfterSave: reloadAfterSave,
+                completions: completion.map { [$0] } ?? [])
         }
         flushPendingWrite(sceneURL)
     }
@@ -436,10 +439,17 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
                 }
             case .saved(let data, let merged, let conflicted):
                 pendingWrites.removeValue(forKey: file)
-                if !merged, let baselineID = pending.baselineID { sceneBaselines[baselineID] = data }
+                // Until WebKit accepts a merged reload, its baseline is the
+                // submitted local scene, which may not yet contain Agent edits.
+                if let baselineID = pending.baselineID {
+                    sceneBaselines[baselineID] = merged
+                        ? try JSONSerialization.data(withJSONObject: pending.object) : data
+                }
+                jsCall("acknowledgeSave", ["documentID": file.path,
+                    "baselineID": pending.baselineID as Any? ?? NSNull(), "scene": pending.object])
                 if sceneURL == file {
                     lastSceneData = data
-                    if merged { reloadScene(fit: false) }
+                    if merged || pending.reloadAfterSave { reloadScene(fit: false) }
                     if conflicted {
                         setStatus("并发修改已合并；冲突内容保存在项目画板 conflicts 目录。", busy: false)
                     }
@@ -488,7 +498,8 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
         case "change":
             if let scene = body["scene"] as? String,
                body["documentID"] as? String == sceneURL?.path {
-                persistScene(scene, baselineID: body["baselineID"] as? String)
+                persistScene(scene, baselineID: body["baselineID"] as? String,
+                    reloadAfterSave: body["reloadAfterSave"] as? Bool == true)
             }
         case "modal":
             composer.isHidden = body["open"] as? Bool == true

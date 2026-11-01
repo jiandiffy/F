@@ -6,6 +6,14 @@ import os from 'node:os';
 export const applicationData = () => path.join(os.homedir(), 'Library/Application Support/F');
 export const recordID = (dataset, source) => createHash('sha256').update(`${dataset}\0${source}`).digest('hex');
 
+function validEvidence(evidence) {
+  const url = typeof evidence?.url === 'string' ? URL.parse(evidence.url) : null;
+  return ['institution', 'performance', 'discussion'].includes(evidence?.kind) &&
+    typeof evidence.summary === 'string' && evidence.summary.trim().length > 0 &&
+    url && ['http:', 'https:'].includes(url.protocol) && url.hostname && !url.username && !url.password &&
+    Number.isFinite(evidence.score) && evidence.score >= 0 && evidence.score <= 1;
+}
+
 export async function atomicJSON(file, value) {
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const temp = `${file}.${randomUUID()}.tmp`;
@@ -35,6 +43,8 @@ export class DatasetStore {
   async get(id) { return JSON.parse(await readFile(this.file(id), 'utf8')); }
   async put(record) {
     if (!record.dataset || !record.source?.url || !record.title) throw new Error('A record needs dataset, title and source.url');
+    if (record.evidence && (!Array.isArray(record.evidence) || record.evidence.some(e => !validEvidence(e))))
+      throw new Error('Evidence needs kind, source URL, summary and explicit 0–1 score');
     const id = recordID(record.dataset, record.source.url);
     return withLock(this.file(id) + '.lock', async () => {
       let previous;
@@ -45,9 +55,7 @@ export class DatasetStore {
     });
   }
   async evidence(id, evidence) {
-    const fields = ['institution', 'performance', 'discussion'];
-    if (!fields.includes(evidence.kind) || !evidence.summary?.trim() || !/^https?:\/\//.test(evidence.url) ||
-        !Number.isFinite(evidence.score) || evidence.score < 0 || evidence.score > 1)
+    if (!validEvidence(evidence))
       throw new Error('Evidence needs kind, source URL, summary and explicit 0–1 score');
     return withLock(this.file(id) + '.lock', async () => {
       const value = await this.get(id);
@@ -80,7 +88,7 @@ export function rankPaper(record, now = Date.now()) {
   const recency = Number.isFinite(age) ? Math.exp(-age / (180 * 86400000)) : 0;
   const evidence = {};
   for (const kind of ['institution', 'performance', 'discussion']) {
-    const values = (record.evidence ?? []).filter(e => e.kind === kind && e.url && Number.isFinite(e.score));
+    const values = (record.evidence ?? []).filter(e => e.kind === kind && validEvidence(e));
     evidence[kind] = values.length ? Math.max(...values.map(e => e.score)) : null;
   }
   return { score: 0.4 * recency + 0.2 * (evidence.institution ?? 0) + 0.2 * (evidence.performance ?? 0) + 0.2 * (evidence.discussion ?? 0),

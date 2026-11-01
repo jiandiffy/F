@@ -35,7 +35,7 @@ export async function mountSubagents(ctx, options) {
       description: 'Start an independent managed child and return its id. spawn starts fresh; fork inherits completed turns. Completion returns to this conversation. Use for focused delegation.',
       parameters: objectSchema({ prompt: stringSchema, label: stringSchema, provider: { type: 'string', enum: ['spawn','fork'] },
         cwd: stringSchema, model: stringSchema, model_provider: stringSchema, reasoning_effort: stringSchema,
-        maxDepth: { type: 'integer', minimum: 0 }, outputSchema: { type: 'object', additionalProperties: true } }, ['prompt','label']),
+        maxDepth: { type: 'integer', minimum: 0, description: 'Absolute depth limit including this child, not additional nesting. Usually omit: the default 1 already prevents children spawning grandchildren. A root cannot spawn with maxDepth=0.' }, outputSchema: { type: 'object', additionalProperties: true } }, ['prompt','label']),
       async execute(_id, args, signal, _update, context) {
         const parent = snapshotParent(context);
         const activation = await manager.startActivation({ provider: args.provider ?? 'spawn', label: args.label,

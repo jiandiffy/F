@@ -65,11 +65,20 @@ function makeScene(elements, appState, files) {
   };
 }
 
+function sceneSignature(scene) {
+  // Foundation may reorder object keys in the save acknowledgement.
+  return JSON.stringify([scene.elements, scene.appState, scene.files], (_key, value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]]))
+      : value);
+}
+
 function App() {
   const apiRef = useRef(null);
   const applyingUntilRef = useRef(0);
   const loadedRef = useRef(false);
   const lastSentRef = useRef("");
+  const lastAcknowledgedRef = useRef("");
   const saveTimerRef = useRef(null);
   const themeRef = useRef("light");
   const documentIDRef = useRef(null);
@@ -97,7 +106,7 @@ function App() {
       const appState = api.getAppState();
       const files = api.getFiles();
       const scene = makeScene(elements, appState, files);
-      const signature = JSON.stringify([scene.elements, scene.appState, scene.files]);
+      const signature = sceneSignature(scene);
       if (signature === lastSentRef.current) return;
       lastSentRef.current = signature;
       if (documentIDRef.current) bridge({ type: "change", documentID: documentIDRef.current, baselineID: baselineIDRef.current, scene: JSON.stringify(scene) });
@@ -183,12 +192,27 @@ function App() {
         data = data.scene;
       }
       if (!Array.isArray(data.elements)) return;
+      const documentID = options.documentID ?? documentIDRef.current;
+      // Native polling can arrive before the 180ms save debounce, or while a
+      // bridge message is still in flight. Preserve those edits through the
+      // native three-way writer before accepting the newer disk snapshot.
+      if (options.baselineID && documentID === documentIDRef.current && loadedRef.current) {
+        const localScene = makeScene(api.getSceneElementsIncludingDeleted(), api.getAppState(), api.getFiles());
+        const signature = sceneSignature(localScene);
+        if (signature !== lastAcknowledgedRef.current) {
+          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+          lastSentRef.current = signature;
+          bridge({ type: "change", documentID, baselineID: baselineIDRef.current,
+            scene: JSON.stringify(localScene), reloadAfterSave: true });
+          return;
+        }
+      }
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       // 立刻停止保存：此刻画布上还是上一个项目的内容。文档 id 只在场景
       // 真正应用成功后才切换，加载失败时旧内容不会被写进新项目的画板。
       loadedRef.current = false;
       applyingUntilRef.current = performance.now() + 700;
-      const documentID = options.documentID ?? documentIDRef.current;
       const generation = ++loadGenerationRef.current;
 
       const local = {
@@ -230,7 +254,8 @@ function App() {
       baselineIDRef.current = options.baselineID ?? null;
 
       const scene = makeScene(restored.elements, restored.appState, restored.files);
-      lastSentRef.current = JSON.stringify([scene.elements, scene.appState, scene.files]);
+      lastSentRef.current = sceneSignature(scene);
+      lastAcknowledgedRef.current = lastSentRef.current;
       const count = restored.elements.filter((element) => !element.isDeleted).length;
       // 存过视角就直接用存档的视口（滚动/缩放），否则才自适应内容。
       const savedViewport =
@@ -267,6 +292,11 @@ function App() {
       setStatus,
       setTheme: (next) => setTheme(next === "dark" ? "dark" : "light"),
       setContext: (value) => setContext(value && typeof value === "object" ? value : {}),
+      acknowledgeSave: ({ documentID, baselineID, scene }) => {
+        if (documentID === documentIDRef.current && baselineID === baselineIDRef.current) {
+          lastAcknowledgedRef.current = sceneSignature(scene);
+        }
+      },
       menuAction: (action) => {
         // 所有格式共用一个导出面板。
         if (action === "image" || action === "export" || action === "save") {

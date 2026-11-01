@@ -44,6 +44,9 @@ export class PluginHmr {
     this.assertIdle(context);
     if (!validID(id) || !/^[a-f0-9]{64}$/.test(sha256)) throw new Error('Expected plugin id and lowercase SHA256');
     if (process.env.F_REMOTE_PROJECT) throw new Error('HMR only loads explicitly reviewed local Agent plugins');
+    const bus = this.ctx.get('bus');
+    if (bus) await bus.sync(context);
+    const priorAuthorization = [...(bus?.authorizations.get('hmr/' + id) ?? [])];
     this.changing = true;
     let old, candidate, state, stopped = false;
     try {
@@ -114,6 +117,7 @@ export class PluginHmr {
           try { if (restored) await this.stop(restored); } catch (cleanup) { failures.push('rollback cleanup: ' + cleanup.message); }
         }
       } else if (candidate && !candidate.quarantined) this.records.delete(id);
+      bus?.restoreAuthorization('hmr/' + id, this.records.get(id)?.accepted ? priorAuthorization : []);
       try { this.record('f-plugin-hmr', { id, sha256, state: 'rejected', error: failures.join('; '), timestamp: Date.now() }); } catch {}
       throw new Error(failures.join('; '));
     } finally { this.changing = false; }
@@ -184,8 +188,10 @@ export class PluginHmr {
   }
   withdraw(entry) {
     for (const definition of entry.tools.values()) this.hideTool(definition, entry.id);
+    this.ctx.get('bus')?.restoreAuthorization('hmr/' + entry.id);
   }
   activate(entry) {
+    this.ctx.get('bus')?.authorizeTools('hmr/' + entry.id, entry.tools.keys());
     this.ctx.host.pi.setActiveTools([...new Set([...this.ctx.host.pi.getActiveTools(), ...entry.tools.keys()])]);
     const active = new Set(this.ctx.host.pi.getActiveTools());
     const blocked = [...entry.tools.keys()].filter(name => !active.has(name));
