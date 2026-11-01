@@ -1,0 +1,22 @@
+.DS_Store
+.f/
+gui-mac/F.app/
+gui-mac/.build/
+gui-mac/.build-lock/
+harness/node_modules/
+harness/dist/
+__pycache__/
+
+# Local state and downloaded reference checkouts are never product commits.
+pi/agent/*.json
+pi/agent/model-list.txt
+zotero/*.md
+!zotero/README.md
+whiteboard/node_modules/
+whiteboard/dist/
+vendor/deepseek-harness/
+vendor/cursor-plugins/
+*.tmp
+gui-mac/Resources/whiteboard/
+gui-mac/Resources/terminal/
+pi/agent/bin/
