@@ -1,0 +1,6 @@
+{
+  "name": "f-harness", "private": true, "type": "module",
+  "scripts": {"build": "node scripts/build.mjs", "test": "node --test tests/*.test.mjs"},
+  "dependencies": {"chokidar": "4.0.3", "yaml": "2.9.0"},
+  "devDependencies": {"esbuild": "0.25.12"}
+}

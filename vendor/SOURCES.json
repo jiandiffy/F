@@ -1,0 +1,14 @@
+{
+  "deepseek-harness": {
+    "url": "https://github.com/deepseek-ai/deepseek-harness.git",
+    "commit": "ce7073d51254c26cd63b22a60835b8f948deb447"
+  },
+  "cursor-plugins": {
+    "url": "https://github.com/cursor/plugins.git",
+    "commit": "4dd1d05818d19792e7cd6e818f1667f95f7e1dbe"
+  },
+  "unslop": {
+    "source": "cursor-plugins/pstack/skills/unslop",
+    "modification": "Enable model invocation for F user-requested automatic prose delivery."
+  }
+}
