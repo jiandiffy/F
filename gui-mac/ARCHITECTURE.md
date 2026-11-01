@@ -125,7 +125,7 @@ side agent 实现 `FProcessActivity`：只要它仍在执行请求或还有排�
 
 远程工具使用 pi 的正式工具工厂保留参数、diff、图片读取及输出截断行为；远程 shell
 支持 AbortSignal 和超时，取消时结束对应的远程进程组或子进程树。白板工具继续操作本地
-集中存储的真实 Excalidraw 元素。GUI 与当前对话的 Agent 使用同一个会话专属画板目录；远程项目描述只标识执行环境。
+集中存储的真实 Excalidraw 元素。GUI 与当前对话的 Agent 使用同一个项目共享画板目录；远程项目描述只标识执行环境。
 
 右侧浏览器保留 2 MB 以内 UTF-8 文本的原子保存与冲突检查；Agent 工具支持更大的文件。
 连接由系统 OpenSSH 解析 Host/Match、Include、密钥和 ProxyJump，使用私有控制套接字并

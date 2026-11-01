@@ -6,7 +6,7 @@ import { CapabilityBus } from './bus.mjs';
 import { leasesFor, resourceOwner, resourceDirectory } from './leases.mjs';
 import { result, objectSchema, stringSchema } from '../core/kernel.mjs';
 import { snapshotParent } from '../subagent/index.mjs';
-import { hasSandbox } from '../skills/maintenance.mjs';
+import { hasSandbox, maintenanceShellGuard, extendMaintenanceShell } from '../skills/maintenance.mjs';
 
 const arrayOfStrings = { type: 'array', items: stringSchema };
 const quote = s => "'" + s.replaceAll("'", "'\\''") + "'";
@@ -107,7 +107,7 @@ export async function mountAIOS(ctx, { root, dataRoot, enabled = true } = {}) {
     scope.systemPrompt.register('aios', async (_event, context) => {
       const current = enabled ? await stateFor(context).current() : undefined;
       const catalog = bus.catalog().filter(c => c.name !== 'core').map(c => ({ name: c.name, description: c.description }));
-      if (!enabled || !scope.host.pi.getActiveTools().includes('goal_flow')) return `你只完成当前分工并返回结果；目标编排与审核由主agent负责。F 能力总线：先 bus list，根据 name/description 按需 activate。画板写入必须 resource_scope 申请矩形，多agent文件修改先申请范围并重读后再改，结束时释放。能力：${JSON.stringify(catalog)}`;
+      if (!enabled || !scope.host.pi.getActiveTools().includes('goal_flow')) return `${Number(process.env.F_AGENT_DEPTH ?? 0) > 0 ? '你只完成当前分工并返回结果；目标编排与审核由主agent负责。' : '按当前用户任务直接执行；当前目标编排已关闭或未授权。'}F 能力总线：先 bus list，根据 name/description 按需 activate。画板写入必须 resource_scope 申请矩形，多agent文件修改先申请范围并重读后再改，结束时释放。能力：${JSON.stringify(catalog)}`;
       return `F 是插件化 AI OS。每个目标先 goal_flow begin，用判断选择 simple 或 complex；简单目标单agent处理，复杂目标用 discuss 建立研究员与三领域专家，达到共识和技术计划分别等待用户 /goal approve 审核。不能用工具或自己发消息伪造批准。仅按需用 bus activate 启用能力，停用不用的能力。工具/技能/数据集按 name、description 发现。画板必须先 resource_scope 申请矩形；多agent文件修改先申请范围，重读后再改、完毕释放。完成工程后 goal_flow delivered → simplify → test；测试失败由主agent选择 repair 或 replan。自然语言交付必须调用并应用 unslop 技能，运行时记录真实加载；简单非代码目标在 delivered 后直接完成，不增加测试子agent。技术/测试报告各<=1000字，共识<=200字。\n能力目录：${JSON.stringify(catalog)}\n当前目标：${JSON.stringify(current ?? null)}`;
     });
     scope.host.on(scope, 'tool_call', async (event, context) => {
@@ -122,15 +122,19 @@ export async function mountAIOS(ctx, { root, dataRoot, enabled = true } = {}) {
           return;
         }
         if (event.toolName === 'bash') {
+          const guard = maintenanceShellGuard(event);
+          if (guard && guard.mode !== 'sandbox') return;
           const state = await leases.status();
           if (!required && !planning && !state.leases.some(l => l.paths.length)) return;
           const allowed = planning ? [] : state.leases.filter(l => l.owner === owner).flatMap(l => l.paths);
           if (!hasSandbox()) throw new Error('Scoped shell execution requires sandbox-exec; use read tools or leased write/edit');
           const exceptions = allowed.map(p => `(require-not (subpath ${JSON.stringify(p)}))`).join('');
           const project = await realpath(context.cwd), metadata = await realpath(resourceDirectory(context));
-          const profile = `(version 1)(allow default)(deny file-write* (require-all (subpath ${JSON.stringify(project)})${exceptions}))(deny file-write* (subpath ${JSON.stringify(metadata)}))`;
+          const rules = `(deny file-write* (require-all (subpath ${JSON.stringify(project)})${exceptions}))(deny file-write* (subpath ${JSON.stringify(metadata)}))`;
           const tokens = await leases.pinLeases({ owner, leaseIds: state.leases.filter(l => l.owner === owner && l.paths.length).map(l => l.id) });
           if (tokens.length) pins.set(event.toolCallId, { leases, tokens });
+          if (extendMaintenanceShell(event, rules)) return;
+          const profile = '(version 1)(allow default)' + rules;
           event.input.command = `/usr/bin/sandbox-exec -p ${quote(profile)} /bin/bash --noprofile --norc -c ${quote(String(event.input.command ?? ''))}`;
           return;
         }

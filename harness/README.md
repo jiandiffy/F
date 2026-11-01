@@ -5,7 +5,7 @@ F 的 Agent 层使用 DeepSeek 官方 vendored Cordis；AppKit 载体实现相�
 
 官方基线为 [ce7073d51254c26cd63b22a60835b8f948deb447](https://github.com/deepseek-ai/deepseek-harness/commit/ce7073d51254c26cd63b22a60835b8f948deb447)，核对日期 2026-10-31。
 `upstream/SOURCE.json` 逐文件记录 Git blob 与 SHA256；`scripts/verify-upstream.py` 在构建前验证。
-只复制实际编译的 32 个上游源文件和相邻类型、许可证，没有复制完整 DSH 应用或启用其他子系统。
+签名应用只包含实际编译的 32 个上游源文件和相邻类型、许可证。完整上游源码与文档已固定下载至 `../vendor/deepseek-harness`，供维护时查阅，不自动执行其中的应用。
 
 | 层 | 服务与职责 |
 | --- | --- |
@@ -42,7 +42,7 @@ Pi 是可替换的宿主适配器，不修改其安装包中的 Agent loop；F �
 `spawn` 使用独立 Pi 会话；`fork` 复制父级已完成轮次的精确 Pi 分支，保留工具结果、压缩与树条目，不复制当前进行中的轮次。
 每个子级最多一个在线 activation；父级私有目录记录 membership，后续 `send_message` 可冷恢复原会话。
 只有直接父级可以列举、消息或中断所属子级；子级以 `childId: parent` 通过所属消息通道回传。
-子级继承模型、思考程度、执行环境和同一条对话的画板目录；可显式选模型和初始 cwd。
+子级继承模型、思考程度、执行环境和同一项目的共享画板目录；可显式选模型和初始 cwd。
 默认最多 4 个直接并行子级，绝对深度上限 1。模型请求只能收紧上限。结构化输出使用官方 JSON Schema 子集验证。
 CBI/CBC 历史导入会连接所有用户/助手记录的父链，并保留工具参数与结果正文，避免多轮 fork/冷恢复丢失早期上下文。
 结果等到 `agent_settled`、进程和消息通道回收后结算；不把低层 `agent_end` 误认为最终完成。
@@ -77,7 +77,7 @@ SDK 模型流为本地 stub，不等同付费模型验收。
 
 `F → plugin` 包含 Skills、Subagent、Workflow 开关；Workflow 依赖 Subagent。
 原有应用插件可用 `requiredServices`、`providedServices`、`mount(in:)` 扩展；默认实现兼容所有现有 FPlugin。
-项目、会话、boardID、底栏多进程和统一存储契约不变。
+项目改为文件夹下多会话；boardID 继续隔离会话恢复状态，共享画板和数据仍统一存储，底栏多进程保留。
 构建把 `src/` 与捆绑全部依赖的 `dist/` 放进签名 F.app，PiRPC 传入 `F_HARNESS_DIR`，新会话加载已验证版本。
 适配器仍使用现有受锁定的 Pi 安装与模型凭据；不会复制或替换用户凭据。
 
@@ -101,3 +101,14 @@ HMR 验收还会在临时项目加载 v1 → 替换 v2 → 拒绝失败候选并
 测试记录在该次更新的 `validation/` 中；发布后由 F 等待任务和队列空闲再安装，不提前退出宿主。
 
 实现参考：[微内核](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.zh.md)、[Cordis](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cordis-primer.zh.md)、[Skills](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.zh.md)、[Subagent](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/subagent.zh.md)、[Workflow](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/workflow.zh.md)。
+
+
+## AI OS 与项目插件
+
+`src/aios` 提供能力目录、持久目标状态机和资源申请。`bus` 按名称/描述启用工具参数；显式 CLI 白名单是权限上限，停用仍生效。`goal_flow` 的复杂任务实际运行研究员、三位专家和投票；两次用户审批带报告修订号。代码交付经过简化和独立测试，文字交付要求成功加载 `unslop`。
+
+`resource_scope` 在共享项目目录保存矩形与文件范围租约。画板写入在同一事务锁中检查新旧元素范围、版本，再原子保存。原生画板使用该锁并做三方合并，未确认的前端编辑会先保存再接受外部场景。Shell 保护与 F 自维护保护组合成一层 macOS sandbox，避免嵌套失败。
+
+`src/datasets` 注册 GitHub、Zotero、arXiv 和自定义提供方；`src/versions` 管理独立项目仓库、树状工作树、范围提交和经过验证的合并。测试命令改变 HEAD、index 或工作文件时保留现场并拒绝自动合并。连接实测见 [CONNECTIONS](../docs/CONNECTIONS.md)。
+
+`F_BOARD_DIR` 为项目共享目录；`F_CONVERSATION_DIR` 为会话私有目录。远程文件仍走已认证 SSH；当前远程多 Agent 写入需要远端租约提供方，运行时会明确拒绝未经协调的远端并行写入。

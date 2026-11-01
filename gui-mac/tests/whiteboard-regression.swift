@@ -32,6 +32,15 @@ extension WhiteboardView {
     var inputHiddenForTest: Bool { composer.isHidden }
     var composerForTest: GlassComposer { composer }
 
+    func writeExternalSceneForTest(_ elements: [[String: Any]], reload: Bool) {
+        var scene = try! JSONSerialization.jsonObject(with: Data(contentsOf: sceneURL!)) as! [String: Any]
+        scene["elements"] = elements
+        scene["revision"] = (scene["revision"] as? Int ?? 0) + 1
+        try! JSONSerialization.data(withJSONObject: scene).write(to: sceneURL!, options: .atomic)
+        if reload { reloadScene(fit: false) }
+        else { pollSceneFile() }
+    }
+
     func checkNativeInput() {
         var sent: [String] = []
         onPrompt = { sent.append($0) }
@@ -43,6 +52,37 @@ extension WhiteboardView {
         precondition(sent == ["测试画板指令"], "Native input did not forward the prompt")
         precondition(composer.showsOptions, "Board input must show model and thinking choices")
         onPrompt = nil
+    }
+}
+
+func concurrentSceneChecks(completion: @escaping () -> Void) {
+    var original = rectangleFixture
+    original["id"] = "remove-locally"
+    var agentAddition = rectangleFixture
+    agentAddition["id"] = "keep-agent-addition"
+    agentAddition["x"] = 360
+    board.writeExternalSceneForTest([original], reload: true)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        board.evaluateForTest("window.FWB.menuAction('clear'); true") { _ in
+            assertEventually("Boolean(document.querySelector('.confirm-dialog-buttons button:last-child'))", "clear confirmation is ready for concurrent edit") {
+                board.evaluateForTest("document.querySelector('.confirm-dialog-buttons button:last-child').click(); window.FWB.getScene().length") { count in
+                    precondition(count as? Int == 0, "Clear must change the live canvas synchronously")
+                    let disk = try! JSONSerialization.jsonObject(with: Data(contentsOf: board.documentForTest)) as! [String: Any]
+                    precondition((disk["elements"] as! [[String: Any]]).contains { $0["id"] as? String == "remove-locally" }, "Regression must poll before the local debounce reaches disk")
+                    // The Agent writes while the native pendingWrites queue is empty,
+                    // but Excalidraw still has a local deletion waiting for its timer.
+                    board.writeExternalSceneForTest([original, agentAddition], reload: false)
+                    assertEventually("window.FWB.getScene().length === 1 && window.FWB.getScene()[0].id === 'keep-agent-addition'", "poll merges an unsent local deletion with an Agent addition") {
+                        let merged = try! JSONSerialization.jsonObject(with: Data(contentsOf: board.documentForTest)) as! [String: Any]
+                        precondition((merged["elements"] as! [[String: Any]]).map { $0["id"] as! String } == ["keep-agent-addition"])
+                        precondition(!board.hasPendingWrites)
+                        print("PASS: Agent polling preserves local edits pending the WebKit debounce and merges both writers")
+                        board.writeExternalSceneForTest([], reload: true)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: completion)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -184,7 +224,7 @@ let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
                         precondition(value as? Bool == true, "Light theme / clear status failed")
                         print("PASS: real WebKit ready handshake, scene load, theme and busy status")
                         board.checkNativeInput()
-                        interfaceChecks()
+                        concurrentSceneChecks { interfaceChecks() }
                     }
                 }
             }

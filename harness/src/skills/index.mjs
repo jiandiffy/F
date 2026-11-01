@@ -2,7 +2,7 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { SkillRegistry, filesystemSkills, renderSkillContent } from '../../dist/upstream.mjs';
 import { result, objectSchema, stringSchema } from '../core/kernel.mjs';
-import { mountMaintenance } from './maintenance.mjs';
+import { mountMaintenance, maintenanceSourceContext } from './maintenance.mjs';
 
 export async function mountSkills(ctx, { root, enabled = true }) {
   await mountMaintenance(ctx, { root });
@@ -50,13 +50,13 @@ export async function mountSkills(ctx, { root, enabled = true }) {
       if (['write','edit','bash'].includes(event.toolName)) ctx.refreshSkills();
     });
     ctx.systemPrompt.register('f-maintenance', async (_event, context) => {
-      if (process.env.F_REMOTE_PROJECT || !(context.cwd === root || context.cwd.startsWith(root + path.sep))) return '';
+      if (process.env.F_REMOTE_PROJECT || !maintenanceSourceContext(root, context.cwd)) return '';
       // Essential self-update rules must be present even before the model chooses a skill.
       const skill = await ctx.skills.get('f-maintenance', { cwd: cwdOf(context) });
       return renderSkillContent(skill) + '\n\n' + await readFile(path.join(root, 'F_MAINTENANCE.md'), 'utf8');
     });
     ctx.host.on(ctx, 'tool_call', (event, context) => {
-      if (!(context.cwd === root || context.cwd.startsWith(root + path.sep))) return;
+      if (!maintenanceSourceContext(root, context.cwd)) return;
       if (event.toolName !== 'bash' || process.env.F_REMOTE_PROJECT) return;
       const command = String(event.input.command ?? '');
       const pid = process.env.F_APP_PID;
