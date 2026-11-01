@@ -6,7 +6,10 @@ function argument(names) { let value; for (let i = 0; i < process.argv.length; i
 function capability(tool) {
   if (tool.capability?.name) return tool.capability;
   const name = tool.name;
-  if (builtins.has(name)) return { name: 'core', description: '读写项目文件、技能按需加载、总线与目标管理' };
+  // A managed child must always be able to report to its parent without enabling
+  // optional delegation tools (which cannot spawn at the inherited depth limit).
+  const parentRelay = name === 'send_message' && Number(process.env.F_AGENT_DEPTH ?? 0) > 0 && process.env.F_PARENT_AGENT_ID && process.env.F_AGENT_RELAY_DIR;
+  if (builtins.has(name) || parentRelay) return { name: 'core', description: '读写项目文件、技能按需加载、总线、目标管理与父子通信' };
   if (['subagent','list_agents','send_message','interrupt_agent'].includes(name)) return { name: 'subagents', description: '启动、沟通和收回独立子代理' };
   if (name.startsWith('workflow')) return { name: 'workflow', description: '编排大型并行任务与后台工作流' };
   if (name.startsWith('whiteboard')) return { name: 'whiteboard', description: '在申请的项目画板矩形内绘制、读取和修改图解' };
