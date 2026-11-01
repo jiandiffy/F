@@ -94,7 +94,13 @@ try{
  assert.ok(events.some(e=>e.type==='message_start' && e.message?.customType==='agent-message'),'child relay did not reach parent');
  const owners=await readdir(path.join(board,'harness/subagents'));
  const catalog=JSON.parse(await readFile(path.join(board,'harness/subagents',owners[0],'catalog.json'),'utf8'));
- const id=catalog.find(e=>e.label==='probe')?.childId;assert.ok(id);
+ const probe=catalog.find(e=>e.label==='probe'),id=probe?.childId;assert.ok(id);
+ const childMessages=(await readFile(probe.sessionFile,'utf8')).split('\n').filter(Boolean).map(line=>JSON.parse(line).message).filter(Boolean);
+ const relayCall=childMessages.filter(message=>message.role==='assistant').flatMap(message=>message.content??[]).find(part=>part.type==='toolCall'&&part.name==='send_message'&&part.arguments?.childId==='parent'&&part.arguments?.message==='RELAY_F_TEST');
+ assert.ok(relayCall,'child must call the real send_message tool; a relay file written by shell is not tool acceptance');
+ assert.ok(childMessages.some(message=>message.role==='toolResult'&&message.toolCallId===relayCall.id&&message.toolName==='send_message'&&!message.isError),'child parent-message tool must succeed');
+ assert.ok(childMessages.some(message=>message.role==='toolResult'&&message.toolName==='read'&&!message.isError&&message.content?.some(part=>part.text?.includes('BETA_F_TEST'))),'child must actually read the inherited file');
+ stage.childTools=childMessages.filter(message=>message.role==='toolResult').map(message=>({name:message.toolName,isError:!!message.isError}));
  await run('cold-resume',`Call send_message with childId ${id} and message "Reply RESUMED_F_TEST without other actions." Wait for the completion.`,['send_message']);
  assert.ok(childResults().some(r=>r.output.some(c=>c.text?.includes('RESUMED_F_TEST'))),'resume output missing');
  await run('fork-completed-history',`Call subagent with provider fork and label fork-check. Task: "From the completed conversation history, identify the edited note.txt text. Reply FORK_F_TEST followed by that exact text. Do not call tools." Wait for its completion.`,['subagent']);
