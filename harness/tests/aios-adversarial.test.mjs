@@ -266,14 +266,16 @@ test('256 seeded random node moves reject out-of-lease mutations without changin
   }
 });
 
-test('all 27 expert vote combinations enforce the two-vote gate and reject 100 stale approvals', async t => {
+test('all 27 staged selection combinations enforce unique candidates and reject 100 stale approvals', async t => {
   const directory = await temporary(t), ids = ['a', 'b', 'c'];
   for (let n = 0; n < 27; n++) {
     const store = new GoalState({ directory, sessionId: `vote-${n}` });
-    const goal = await store.begin({ goal: 'Boundary test', complexity: 'complex' });
+    const goal = await store.begin({ goal: 'Boundary test', complexity: 'complex', baseline:{id:'original',publication:{repository:'fixture/private'}} });
     const picks = [n % 3, Math.floor(n / 3) % 3, Math.floor(n / 9) % 3];
-    const current = await store.consensus(goal.id, { research: { sources: ['https://arxiv.org/abs/2601.00001'] }, candidates: ids.map(childId => ({ childId, report: 'Proposal' })), votes: ids.map((childId, i) => ({ childId, proposalId: ids[picks[i]] })) });
-    assert.equal(current.phase, new Set(picks).size < 3 ? 'consensus_review' : 'discussing');
+    await store.update(goal.id,'planning',g=>{g.phase='selection';g.revision=1;g.stageIndex=0;g.approvedTree={children:[{},{}]};g.stages=[{candidates:ids.map(id=>({phase:'candidate',version:{id},publication:{commit:'fixed'}}))}];});
+    const request={id:goal.id,revision:1,decision:'select',selections:picks.map(i=>ids[i])};
+    if(new Set(picks).size<3)await assert.rejects(store.review(request),/Select/);
+    else assert.equal((await store.review(request)).phase,'proposing');
     if (n === 0) for (let revision = 2; revision < 102; revision++) await assert.rejects(store.review({ id: goal.id, revision, decision: 'approve' }), /stale/);
   }
 });

@@ -17,11 +17,12 @@ input.on('line',line=>{
   send({id:r.id,type:'response',success:true,data:{disposition:'started'}});
   if(r.message.startsWith('hang')) return;
   setTimeout(()=>{
-   send({type:'message_end',message:{role:'assistant',stopReason:r.message==='fail'?'error':'stop',content:[{type:'text',text:r.message.includes('Return ONLY')?' {"count":2} ':r.message}]}});
+   const text=r.message.startsWith('ambiguous')?'Summary\\n\u0060\u0060\u0060json\\n{"count":2}\\n\u0060\u0060\u0060\\n\u0060\u0060\u0060json\\n{"count":3}\\n\u0060\u0060\u0060':r.message.startsWith('fenced')?'Summary\\n\u0060\u0060\u0060json\\n{"count":2}\\n\u0060\u0060\u0060':r.message.includes('Return ONLY')?' {"count":2} ':r.message;
+   send({type:'message_end',message:{role:'assistant',stopReason:r.message==='fail'?'error':'stop',content:[{type:'text',text}]}});
    send({type:'agent_end'});
    send({type:'agent_settled',aborted:false});
   },r.message.startsWith('delay')?100:5);
- } else send({id:r.id,type:'response',success:true,data:{}});
+ } else send({id:r.id,type:'response',success:true,data:r.type==='get_state'?{model:{provider:'cbi',id:'deepseek-v4.1-flash'},thinkingLevel:'medium'}:{}});
 });
 input.on('close',()=>process.exit(0));
 `);

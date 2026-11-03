@@ -60,8 +60,9 @@ protocol FProcessProvider {
 分支、范围提交和测试合并是 Agent 内部工具，不提供界面按钮或开发菜单。简单任务验收后记录线性
 大版本，复杂任务保留固定的 Agent 派生节点与合并关系，失败或取消不记录成功大版本。
 
-GitHub 不因打开版本或任务完成自动联网。发布须由用户通过独立菜单明确授权，只发布大版本
-快照链；新仓库私有，既有仓库先核实私有性，不强推、不上传开发提交祖先。`status.versions`
+普通版本功能不因打开或任务完成自动联网，仍由用户菜单授权发布。复杂阶段工作流按用户启用的规则
+先上传原始快照，再自动上传审核通过的候选，保持阶段父版本关系。新仓库私有，既有仓库先核实私有性，
+不强推、不上传开发提交祖先。`status.versions`
 中的节点以 `id` 标识，`commit`/`head` 为固定对象ID，`parents` 引用版本ID，`kind` 区分
 `major` 与 `agent`；内部工作树信息保留在 `nodes`，不能把可变分支HEAD当作已固定版本。
 `datasets` 和 `aios` 是可开关的 Agent 服务。
@@ -263,28 +264,52 @@ HMR 只替换通过下列契约编写的本机 Agent 插件，在当前对话的
   未结束的验收任务仍使用临时目录时不会删除它，状态中的 acceptanceDirectory 可供排查，停稳后 unload 才回收。
 - 状态和工具只属于当前 Agent 运行时：切换/关闭会话会释放，不自动执行磁盘插件或在重启时自动恢复。
   执行结果写入会话的 `f-plugin-hmr` 记录。JS 模块定义仍受 Node 缓存管理，HMR 释放的是作用域及资源，
-  不承诺卸载机器码或回收所有模块缓存。
+  不承诺卸载机器码或回收所有模块缓存。受管理的子代理可继承父会话已批准的精确模块，启动时
+  重新校验同一哈希并在自己的 Cordis 作用域挂载；不扫描未授权文件，不因重启自动恢复磁盘插件。
 - **信任边界**：插件及其测试是受信本机代码，拥有 Pi 进程权限，不是 OS/网络/文件沙箱。
   哈希防误载，命名空间和生命周期防意外冲突；它们不审计恶意代码，也不能回滚未按契约执行的外部副作用。
 
 ## 10. Workflow 与 Agent 工具插件
 
 开发入口为 `skills/f-workflow-plugins/SKILL.md`；原生界面和素材规则见 `skills/f-plugins/SKILL.md`。
-Workflow 是编排能力，不是 Swift UI 加载器。已有领域能力修改原插件，不重复注册工具。
+Workflow 通过 Cordis Service、依赖和 effect 接入，不加载 Swift UI。旧专家投票、双审批、JavaScript
+script/parallel/pipeline 执行接口已经移除。旧历史保留，但不继续执行旧的复杂目标状态。
 
-- `workflow` 输入为 meta、script、可选 args、run_in_background。meta 必填 name、description，
-  可选 whenToUse 和 phases；phase 需 title，可选 detail、provider、model。
-- script 是 async 函数体，无 export；可用 args、agent(prompt, options)、parallel(thunks)、
-  pipeline(items, ...stages)、phase(title)、log(text)。agent options 支持 label、phase、schema、provider、model。
-  子 Agent 返回文字或符合 schema 的结构化结果，失败返回 null，调用者必须处理失败。
-- 返回值只能为 JSON。默认最多4个并发和32个子 Agent，VM 在可取消的独立 Node 进程运行，
-  不是安全沙箱。脚本没有任意文件导入 API，素材路径交给具备对应权限的子 Agent。
-- 前台结果含 kind、runId、agentsStarted、result；后台立即返回 runId，结束后向原会话发送结果。
-  `workflow_control` 的 list/status/cancel 只管理所属会话。取消、错误和部分完成不能标为成功。
-- 内置工具在 `harness/src/<domain>/`，由 `harness/src/index.mjs` 挂载 Cordis 子作用域。
-  使用 ctx.tools、ctx.systemPrompt、ctx.effect 与 inject 管理服务、注册和释放。
-  项目 HMR 遵循第9节，不能通过 workflow 绕过验收或热替换原生模块。
-- 任务说明放 `skills/<name>/SKILL.md`，函数体与输出模板放该技能 assets，领域细节放 references。
-  不向源码或模板写凭据。业务数据沿用既有存储，不混用项目、会话和画板身份。
-- 验证实际结果、子任务失败、断网、额度/上下文耗尽、取消、卸载与再次运行。
-  外部写入结果不明时先核对，不自动重放。测试用临时数据，F 自身修改按 F_MAINTENANCE.md 验收。
+`goal_flow` 的复杂目标和 `workflow` 使用同一个阶段引擎。简单目标仍使用 delivered/simplify/test。
+
+| action | 输入与行为 |
+| --- | --- |
+| begin | goal、可选 artifact/paths/repository；先排除凭据并上传原始 Git 快照，成功后进入 planning |
+| plan | tree；节点有唯一 id、title、objective、可选 children，根的 children 按顺序对应阶段 |
+| propose | 为每个入选固定版本派出3位方向作者，summary 最多200字，另有 method、hypothesis、evaluation |
+| review | 主 Agent 提交 judgments，每项 candidateId/valid/reason，加 distinctness；只让被否决者重提 |
+| run | 所有方法通过后从各固定起点创建三条独立工作树，由方向作者继续实验并自行 commit |
+| split | 仅顶层实验者可用一次，subgoals 为1至3项方向；创建孙分支，孙不能继续委派 |
+| retry | candidateId；失败返回原实验者，保留原分支和反馈，重新派独立精简与测试 |
+| report | 主 Agent 应用 unslop 提交最多1000字阶段报告，全部分支须已测试并上传 |
+| status/cancel/archive | 查看、取消并等待所属任务停稳、归档历史；不删除用户文件或工作树 |
+
+目标树只由实际用户 input 批准。用户可输入“批准阶段目标树”，或 `/goal approve <id> <revision>`。
+树被批准后冻结，不再请求阶段方法或子目标审批。阶段结束用户输入“选择候选 1 3”等，或
+`/goal select <id> <revision> <versionId>...`，选1至3个本阶段已发布候选，下一阶段每个入选版本再派3人。
+过期审批、重复选择、未通过或未上传候选均不能推进。模型工具没有用户批准或选择动作。
+
+实验者在自己的工作树中修改，先申请 resource_scope 并重新读取。主线保持只读，项目画板仍集中存储。
+每条分支包括孙分支都要通过新的精简者和测试者，二者不同且不是该分支的实验者。测试有真实工具证据，
+并绑定固定 HEAD、index、工作文件和该节点元数据；其他分支的独立提交不会使本分支测试失效。
+测试失败交回原实验者，不能自测放行或冒充成功。孙分支评审由主 Agent 派出，不占用最多3名实验孙代理。
+主进程保留一个评审容量，避免三个父实验者等待孙分支时无法派出评审。
+
+所有受管理的子代理固定使用 cbi / deepseek-v4.1-flash / medium，启动、设置与实际状态都校验。
+根 Agent 的模型选择不变。子代理继承主线最新 skills、共享 datasets、已启用应用和 Cordis 工具，
+以及父会话已批准的精确 HMR 模块；显式工具白名单和插件开关继续作为权限上限。
+默认 datasets 保存在应用数据目录，可由 F_DATASET_DIRECTORY 显式配置，子代理继承同一目录。
+
+原始快照不声称已经过实验测试。候选需有精简和测试的不同身份及实际通过记录。
+原始与候选的发布提交仅引用阶段父快照，不包含开发提交祖先；发布到独立 f-workflow 分支，
+不改用户 origin，不强推。凭据路径、内容和仓库私有性均须检查。发布失败保留本地版本供核对与恢复。
+`workflow_control` 的 list/status/cancel 只管理当前会话，不接受旧脚本运行句柄。
+
+素材与任务说明放 skills/<name>，输出模板放 assets，领域材料放 references，内置领域工具放
+`harness/src/<domain>/` 并由组合根挂载。验证目标树审批、方法拒绝重提、3分支固定起点、一次孙级拆分、
+独立审核、失败修复、候选选择、取消、凭据拒传和真实固定模型工具继承。维护 F 按 F_MAINTENANCE.md 验收。

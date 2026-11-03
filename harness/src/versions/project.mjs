@@ -7,17 +7,18 @@ import { applicationData, atomicJSON, withLock } from '../datasets/store.mjs';
 const validRepo = value => /^[\w.-]+\/[\w.-]+$/.test(value);
 const gitIdentity = ['-c', 'user.name=F', '-c', 'user.email=f@localhost'];
 const secrets = /(^|\/)(auth\.json|credentials[^/]*|.*api[-_]key.*|\.env(?:\..*)?|id_(?:rsa|ed25519)|signing-keychain-password)(\/|$)/i;
-const cleanPath = value => {
+export const cleanPath = value => {
   if (typeof value !== 'string' || !value || value.includes('\0') || path.isAbsolute(value) || value.split(/[\\/]/).some(p => p === '..' || p === '.git')) throw new Error('File scope must be project-relative, without .. or .git');
   return value.replace(/^\.\//, '').replace(/\/$/, '') || '.';
 };
 const contains = (parent, file) => parent === '.' || parent === file || file.startsWith(parent + '/');
 
 export class VersionProject {
-  constructor(project, { dataRoot = path.join(applicationData(), 'applications/versions'), runner = command } = {}) {
-    this.project = path.resolve(project); this.dataRoot = dataRoot; this.run = runner;
+  constructor(project, { dataRoot = path.join(applicationData(), 'applications/versions'), runner = command, agentId = process.env.F_AGENT_ID } = {}) {
+    this.project = path.resolve(project); this.dataRoot = dataRoot; this.run = runner; this.agentId = agentId;
   }
   async git(args, cwd = this.project, options = {}) { return this.run('git', ['--literal-pathspecs', '-C', cwd, ...args], { trim: !args.includes('-z'), ...options }); }
+  exclusive(run) { return withLock(this.lock, run); }
   async verify() {
     const actual = await realpath(this.project);
     const top = await this.git(['rev-parse', '--show-toplevel']);
@@ -71,7 +72,7 @@ export class VersionProject {
     try { await lstat(path.join(this.project, '.git')); ownsGit = true; } catch (error) { if (error.code !== 'ENOENT') throw error; }
     if (!ownsGit) await this.git(['init', '--initial-branch=main']);
     await this.verify();
-    return withLock(this.lock, async () => {
+    return this.exclusive(async () => {
       let hasHead = true;
       try { await this.git(['rev-parse', '--verify', '--quiet', 'HEAD']); }
       catch (error) { if (error.code !== 1) throw error; hasHead = false; }
@@ -115,7 +116,7 @@ export class VersionProject {
     await this.verify();
     if (!label?.trim() || !Array.isArray(paths) || !paths.length) throw new Error('A branch needs a label and explicit file scopes');
     paths = paths.map(cleanPath);
-    return withLock(this.lock, async () => {
+    return this.exclusive(async () => {
       const state = await this.enabledState(), ancestor = state.nodes.find(node => node.id === parent);
       if (!ancestor) throw new Error('Unknown parent version');
       await this.node(parent);
@@ -128,11 +129,12 @@ export class VersionProject {
       state.nodes.push(node); await atomicJSON(this.metadata, state); return node;
     });
   }
-  async node(id) {
+  async node(id, { allowParent = false } = {}) {
     const state = await this.enabledState(), node = state.nodes.find(node => node.id === id);
     if (!node) throw new Error('Unknown version node');
     const root = state.nodes.find(n => n.id === 'root');
-    if (await realpath(this.project) !== await realpath(root.worktree) && await realpath(this.project) !== await realpath(node.worktree)) throw new Error('A child worktree can only operate its own assigned version node');
+    const actual=await realpath(this.project),parent=allowParent&&state.nodes.find(n=>n.id===node.parent);
+    if (actual !== await realpath(root.worktree) && actual !== await realpath(node.worktree) && (!parent || actual !== await realpath(parent.worktree))) throw new Error('A child worktree can only operate its own assigned version node');
     const current = await this.git(['symbolic-ref', '--short', 'HEAD'], node.worktree);
     if (current !== node.branch) throw new Error('Version worktree has switched branches; restore its assigned branch first');
     return node;
@@ -141,7 +143,7 @@ export class VersionProject {
     await this.verify();
     if (!message?.trim() || !Array.isArray(paths) || !paths.length) throw new Error('Commit requires a message and explicit paths');
     paths = paths.map(cleanPath);
-    return withLock(this.lock, async () => {
+    return this.exclusive(async () => {
       const node = await this.node(id);
       await this.commitOwned(node, paths, message);
       const commit = await this.git(['rev-parse', 'HEAD'], node.worktree);
@@ -150,7 +152,7 @@ export class VersionProject {
       if (id !== 'root') {
         const state = await this.enabledState();
         const parent = state.versions.filter(v => v.sourceNode === id).at(-1)?.id ?? node.versionBase;
-        const version = { id: 'agent-' + randomUUID(), commit, head: commit, parents: parent ? [parent] : [], parent: parent ?? null, label: node.label, summary: Array.from(message).slice(0, 200).join(''), kind: 'agent', major: false, sourceNode: id, createdAt: new Date().toISOString(), validation: null };
+        const version = { id: 'agent-' + randomUUID(), commit, head: commit, parents: parent ? [parent] : [], parent: parent ?? null, label: node.label, summary: Array.from(message).slice(0, 200).join(''), kind: 'agent', major: false, sourceNode: id, agentId:this.agentId, createdAt: new Date().toISOString(), validation: null };
         await this.git(['update-ref', `refs/f/version-sources/${version.id}`, commit]);
         state.versions.push(version); await atomicJSON(this.metadata, state);
       }
@@ -199,8 +201,8 @@ export class VersionProject {
   async merge({ node: id, test, signal }) {
     await this.verify();
     if (!Array.isArray(test) || !test.length || test.some(value => typeof value !== 'string')) throw new Error('Merge requires an actual test command as an argv array');
-    return withLock(this.lock, async () => {
-      const state = await this.enabledState(), source = await this.node(id);
+    return this.exclusive(async () => {
+      const state = await this.enabledState(), source = await this.node(id,{allowParent:true});
       if (!source.parent) throw new Error('Root has no parent to merge into');
       const target = await this.node(source.parent);
       const sourceBefore = await this.validationState(source), targetBefore = await this.validationState(target);
@@ -258,7 +260,7 @@ export class VersionProject {
     paths = paths.map(cleanPath);
     if (!['simple','complex'].includes(complexity)) throw new Error('Invalid completion complexity');
     if (!observed && (!Array.isArray(test) || !test.length || test.some(s => typeof s !== 'string' || !s))) throw new Error('Completion requires an actual test command as an argv array');
-    return withLock(this.lock, async () => {
+    return this.exclusive(async () => {
       const state = await this.enabledState(), root = await this.node('root');
       const duplicate = goalId && state.versions.find(v => v.major && v.goalId === goalId);
       if (duplicate) return duplicate;
@@ -298,7 +300,12 @@ export class VersionProject {
   async publish({ version: selected, repository, authorized = false }) {
     if (authorized !== true) throw new Error('GitHub publication requires an explicit user publish action');
     await this.verify();
-    return withLock(this.lock, async () => {
+    const current=await this.enabledState(),workflow=current.versions.find(v=>v.id===selected && v.workflowId);
+    if(workflow) {
+      const { WorkflowProject }=await import('./workflow.mjs');
+      return new WorkflowProject(this.project,{dataRoot:this.dataRoot,runner:this.run}).publishWorkflow(workflow,repository ?? current.workflowRepository);
+    }
+    return this.exclusive(async () => {
       const state = await this.enabledState();
       const version = selected ? state.versions.find(v => v.id === selected) : state.versions.filter(v => v.major).at(-1);
       if (!version?.major || !version.validation?.passed) throw new Error('Select a successfully tested major version to publish');

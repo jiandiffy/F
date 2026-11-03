@@ -9,6 +9,8 @@ import { snapshotParent } from '../subagent/index.mjs';
 import { hasSandbox, maintenanceShellGuard, extendMaintenanceShell } from '../skills/maintenance.mjs';
 import { VersionProject } from '../versions/project.mjs';
 import { command } from '../datasets/providers.mjs';
+import { workflowFields, workflowText } from '../workflow/index.mjs';
+import { workflowAccess } from '../workflow/ownership.mjs';
 
 const arrayOfStrings = { type: 'array', items: stringSchema };
 const quote = s => "'" + s.replaceAll("'", "'\\''") + "'";
@@ -26,6 +28,7 @@ export async function mountAIOS(ctx, { root, dataRoot, enabled = true } = {}) {
         directory: dataRoot ?? path.join(process.env.F_CONVERSATION_DIR ?? process.env.F_BOARD_DIR ?? path.join(os.homedir(),'Library/Application Support/F'), 'harness/bus') }));
       return states.get(sessionId);
     };
+    scope.provide('goalStates', stateFor);
     const bus = new CapabilityBus(scope, { stateFor });
     scope.on('subagent/event', ({ childId, event }) => {
       if (event.type !== 'tool_execution_end') return;
@@ -59,30 +62,25 @@ export async function mountAIOS(ctx, { root, dataRoot, enabled = true } = {}) {
         if (!(await scope.get('subagents')?.listChildren(snapshotParent(context)))?.some(c => c.childId === args.childId)) throw new Error('Only an owned direct child can receive a lease');
         return result(await leases.transfer({ owner, leaseId: args.leaseId, childId: args.childId }));
       } });
-    if (enabled) scope.tools.register({ name: 'goal_flow', label: 'Goal state machine', description: 'Manage goal phases. begin classifies simple/complex and code/prose/other. discuss runs research + three experts and an independent voting round. plan submits <=1000-character technical report. Only user /goal approve can cross review gates. delivered triggers simplification/testing; simplify runs a dedicated cleanup agent; test runs an independent goal-derived tester; rework chooses repair/replan.',
-      parameters: objectSchema({ action: { type: 'string', enum: ['status','begin','discuss','plan','delivered','simplify','test','rework'] }, goal: stringSchema, complexity: { type: 'string', enum: ['simple','complex'] }, artifact: { type: 'string', enum: ['code','prose','other'] }, domains: arrayOfStrings, report: stringSchema, route: { type: 'string', enum: ['repair','replan'] }, paths: arrayOfStrings }, ['action']),
+    if (enabled) scope.tools.register({ name: 'goal_flow', label: 'Goal workflow',
+      description: 'Classify simple or complex goals. Complex goals use the staged workflow: publish original, discuss one stage tree and obtain one human approval, 3 distinct experiments per selected base, independent simplification/testing, <=1000-character stage report, human selection of 1–3 candidates. Simple code tasks retain delivered/simplify/test.',
+      parameters: objectSchema({ ...workflowFields, action: { type: 'string', enum: ['status','begin','plan','propose','review','run','retry','report','cancel','archive','delivered','simplify','test','rework'] },
+        complexity: { type: 'string', enum: ['simple','complex'] }, route: { type: 'string', enum: ['repair','replan'] } }, ['action']),
       async execute(_id, args, signal, update, context) {
         const store = stateFor(context);
         if (args.action === 'status') return result(await store.current() ?? { phase: 'idle' });
-        if (args.action === 'begin') { const goal = await store.begin(args); bus.record('goal-start', goal); return result(goal); }
+        if (args.action === 'begin' && args.complexity === 'complex') {
+          const engine=scope.get('workflowEngine');if(!engine)throw new Error('Enable Workflow and Subagent for staged complex goals');
+          const goal=await engine.execute(args,context,signal);bus.record('goal-start',goal);return result(goal,workflowText(goal));
+        }
+        if (args.action === 'begin') { const goal=await store.begin(args);bus.record('goal-start',goal);return result(goal); }
         const goal = await store.current(); if (!goal) throw new Error('Begin a goal first');
+        if (goal.complexity === 'complex') {
+          const engine=scope.get('workflowEngine');if(!engine)throw new Error('Enable Workflow and Subagent for staged complex goals');
+          const value=await engine.execute(args,context,signal);return result(value,workflowText(value));
+        }
         let value;
-        if (args.action === 'discuss') {
-          if (goal.phase !== 'discussing') throw new Error('Goal is not awaiting discussion');
-          const previous = goal.rounds.at(-1), common = `目标：${goal.goal}\n用户反馈：${goal.feedback ?? '无'}\n请只研究与讨论，不修改项目文件。需要能力时先 bus list/activate，引用真实来源，不编造证据。`;
-          update?.(result({ phase: 'research-and-experts' }));
-          const tasks = [agent(context, signal, 'research', common + '\n负责 arXiv / Zotero 文献研究，返回可验证引用与适用性。可使用 datasets 插件把确实读取的论文加入 paper dataset。', objectSchema({ report: stringSchema, sources: arrayOfStrings })),
-            ...goal.domains.map((domain, i) => agent(context, signal, domain + '专家', common + `\n你是${domain}专家。提出算法架构、约束与验收标准，report 不超过200字。`, objectSchema({ report: stringSchema, rationale: stringSchema }), previous?.candidates[i]?.childId))];
-          const settled = await Promise.allSettled(tasks);
-          const failure = settled.find(r => r.status === 'rejected'); if (failure) throw failure.reason;
-          const [research, ...candidates] = settled.map(r => r.value);
-          candidates.forEach(c => boundedReport(c.report, 200, 'Expert proposal'));
-          update?.(result({ phase: 'expert-vote' }));
-          const votes = await Promise.all(candidates.map((candidate, i) => agent(context, signal, goal.domains[i] + '专家',
-            common + '\n研究结果：' + JSON.stringify(research) + '\n三个候选：' + JSON.stringify(candidates.map(c => ({ childId: c.childId, report: c.report, rationale: c.rationale }))) + '\n讨论后选择最能完成目标的候选childId作为proposalId，可以选择其他专家的方案。rationale说明共识或分歧。', objectSchema({ proposalId: stringSchema, rationale: stringSchema }), candidate.childId)));
-          value = await store.consensus(goal.id, { research, candidates, votes });
-        } else if (args.action === 'plan') value = await store.plan(goal.id, args.report);
-        else if (args.action === 'delivered') value = await store.delivered(goal.id, args.report);
+        if (args.action === 'delivered') value=await store.delivered(goal.id,args.report);
         else if (args.action === 'simplify') {
           if (goal.phase !== 'simplifying') throw new Error('Goal is not awaiting simplification');
           const cleaned = await agent(context, signal, '最简化 agent', `目标：${goal.goal}\n执行结果：${goal.executionSummary ?? ''}\n测试反馈：${goal.feedback ?? ''}\n修改范围：${JSON.stringify(args.paths ?? [])}\n审核本项目本次修改，删除已证实无调用者的冗余代码和遮蔽错误的try/catch；保留磁盘/网络/安装边界必要错误处理。先申请 resource_scope 文件范围，重新读文件再修改，最终释放租约。F源码另需maintenance_scope。不要改未授权文件。实际完成清理并报告变更和验证，不得只给建议。`, objectSchema({ report: stringSchema, changedPaths: arrayOfStrings }));
@@ -119,31 +117,23 @@ export async function mountAIOS(ctx, { root, dataRoot, enabled = true } = {}) {
         } else if (args.action === 'rework') value = await store.rework(goal.id, { route: args.route, reason: args.report });
         else throw new Error('Unsupported goal action');
         bus.record('goal-transition', { id: value.id, phase: value.phase, revision: value.revision });
-        if (['consensus_review','plan_review'].includes(value.phase)) return result(value, JSON.stringify(value, null, 2) + `\n请用户审核：/goal approve ${value.id} ${value.revision}\n修改意见：/goal revise ${value.id} ${value.revision} 修改要求`);
         return result(value);
       } });
-    if (enabled) scope.host.on(scope, 'input', async (event, context) => {
-      if (!['interactive','rpc'].includes(event.source)) return;
-      const match = /^\/goal\s+(approve|revise)\s+([a-f0-9-]+)\s+(\d+)(?:\s+([\s\S]+))?$/.exec(event.text.trim());
-      if (!match) return;
-      const value = await stateFor(context).review({ decision: match[1], id: match[2], revision: Number(match[3]), feedback: match[4] ?? '' });
-      bus.record('user-review', { id: value.id, phase: value.phase, revision: value.revision });
-      return { action: 'transform', text: `用户已${match[1] === 'approve' ? '批准' : '要求修改'}当前报告。状态机已验证：${JSON.stringify(value)}。按当前phase继续。` };
-    });
     scope.host.on(scope, 'before_agent_start', async (_event, context) => { await bus.sync(context); });
     scope.systemPrompt.register('aios', async (_event, context) => {
       const current = enabled ? await stateFor(context).current() : undefined;
       const catalog = bus.catalog().filter(c => c.name !== 'core').map(c => ({ name: c.name, description: c.description }));
       if (!enabled || !scope.host.pi.getActiveTools().includes('goal_flow')) return `${Number(process.env.F_AGENT_DEPTH ?? 0) > 0 ? '你只完成当前分工并返回结果；目标编排与审核由主agent负责。' : '按当前用户任务直接执行；当前目标编排已关闭或未授权。'}F 能力总线：先 bus list，根据 name/description 按需 activate。画板写入必须 resource_scope 申请矩形，多agent文件修改先申请范围并重读后再改，结束时释放。能力：${JSON.stringify(catalog)}`;
-      return `F 是插件化 AI OS。每个目标先 goal_flow begin，用判断选择 simple 或 complex；简单目标单agent处理，复杂目标用 discuss 建立研究员与三领域专家，达到共识和技术计划分别等待用户 /goal approve 审核。不能用工具或自己发消息伪造批准。仅按需用 bus activate 启用能力，停用不用的能力。工具/技能/数据集按 name、description 发现。画板必须先 resource_scope 申请矩形；多agent文件修改先申请范围，重读后再改、完毕释放。完成工程后 goal_flow delivered → simplify → test；测试失败由主agent选择 repair 或 replan。自然语言交付必须调用并应用 unslop 技能，运行时记录真实加载；简单非代码目标在 delivered 后直接完成，不增加测试子agent。技术/测试报告各<=1000字，共识<=200字。\n能力目录：${JSON.stringify(catalog)}\n当前目标：${JSON.stringify(current ?? null)}`;
+      return 'F 是插件化 AI OS。每个目标先 goal_flow begin 判断 simple 或 complex。简单目标直接执行；复杂目标先上传排除凭据的原始 Git 版本，与用户讨论阶段目标树，只批准一次。每个入选起点派3个方向作者，各<=200字。主 Agent 判断方法成立且互不重复，不通过者重提；全通过后 run 从固定起点创建3条分支。实验者自己 commit，可自行拆分一次、最多3个孙实验者，孙不得再拆。每条分支含孙分支都要独立精简和测试，两者不同且不是实验者；失败退回原实验者 retry。全部收成已上传候选后，主 Agent 使用 unslop 写<=1000字阶段报告。只有用户输入可挑1至3个版本；下一阶段每个入选版本再派3人，不重新批准目标树。所有子代理固定cbi/deepseek-v4.1-flash/medium。按name/description发现并按需 bus activate 主线skills、datasets和应用工具。资源写入先申请resource_scope并重读，完成后释放。简单代码交付仍 delivered → simplify → test；自然语言交付需实际加载unslop。\\n能力目录：'+JSON.stringify(catalog)+'\n当前目标：'+JSON.stringify(current ?? null);
     });
     scope.host.on(scope, 'tool_call', async (event, context) => {
       if (!['write','edit','bash'].includes(event.toolName)) return;
-      const store = stateFor(context), goal = enabled ? await store.current() : undefined;
-      const planning = goal && ['discussing','consensus_review','planning','plan_review'].includes(goal.phase);
-      const required = Number(process.env.F_AGENT_DEPTH ?? 0) > 0 || goal?.complexity === 'complex';
-      const leases = leasesFor(context), owner = resourceOwner(context);
       try {
+        const store = stateFor(context), goal = await store.current();
+        const access=await workflowAccess();
+        const planning = (access && !access.canWrite) || ['proposal','tester'].includes(process.env.F_WORKFLOW_ROLE) || (goal?.complexity === 'complex' && goal.phase !== 'complete');
+        const required = Number(process.env.F_AGENT_DEPTH ?? 0) > 0 || (goal?.complexity === 'complex' && goal.phase !== 'complete');
+        const leases = leasesFor(context), owner = resourceOwner(context);
         if (process.env.F_REMOTE_PROJECT) {
           if (required || planning) throw new Error('Remote multi-agent mutations and shell execution require a remote lease provider; use read tools or a single execution owner');
           return;
@@ -151,13 +141,16 @@ export async function mountAIOS(ctx, { root, dataRoot, enabled = true } = {}) {
         if (event.toolName === 'bash') {
           const guard = maintenanceShellGuard(event);
           if (guard && guard.mode !== 'sandbox') return;
-          const state = await leases.status();
-          if (!required && !planning && !state.leases.some(l => l.paths.length)) return;
+          const state = await leases.status(), leased = state.leases.some(l => l.paths.length);
+          if (!goal && !required && !planning && !leased) return;
+          const scoped=required || planning || leased;
           const allowed = planning ? [] : state.leases.filter(l => l.owner === owner).flatMap(l => l.paths);
           if (!hasSandbox()) throw new Error('Scoped shell execution requires sandbox-exec; use read tools or leased write/edit');
           const exceptions = allowed.map(p => `(require-not (subpath ${JSON.stringify(p)}))`).join('');
           const project = await realpath(context.cwd), metadata = await realpath(resourceDirectory(context));
-          const rules = `(deny file-write* (require-all (subpath ${JSON.stringify(project)})${exceptions}))(deny file-write* (subpath ${JSON.stringify(metadata)}))`;
+          const shared=process.env.F_SHARED_PROJECT && path.resolve(process.env.F_SHARED_PROJECT)!==project ? await realpath(process.env.F_SHARED_PROJECT) : null;
+          const stateDirectory=path.dirname(store.file), workflowDirectory=process.env.F_WORKFLOW_STATE_FILE && path.dirname(process.env.F_WORKFLOW_STATE_FILE);
+          const rules = (scoped?`(deny file-write* (require-all (subpath ${JSON.stringify(project)})${exceptions}))`:'')+`(deny file-write* (subpath ${JSON.stringify(metadata)}))(deny file-write* (subpath ${JSON.stringify(stateDirectory)}))`+(workflowDirectory?`(deny file-write* (subpath ${JSON.stringify(workflowDirectory)}))`:'')+(shared?`(deny file-write* (subpath ${JSON.stringify(shared)}))`:'');
           const tokens = await leases.pinLeases({ owner, leaseIds: state.leases.filter(l => l.owner === owner && l.paths.length).map(l => l.id) });
           if (tokens.length) pins.set(event.toolCallId, { leases, tokens });
           if (extendMaintenanceShell(event, rules)) return;

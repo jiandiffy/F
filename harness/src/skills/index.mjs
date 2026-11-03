@@ -8,7 +8,7 @@ export async function mountSkills(ctx, { root, enabled = true }) {
   await mountMaintenance(ctx, { root });
   await ctx.plugin(SkillRegistry);
   const remote = process.env.F_REMOTE_PROJECT && JSON.parse(process.env.F_REMOTE_PROJECT);
-  const cwdOf = context => remote?.cwd ?? context.cwd;
+  const cwdOf = context => process.env.F_SHARED_PROJECT ?? remote?.cwd ?? context.cwd;
   await ctx.plugin(filesystemSkills, { bundledSkillDir: path.join(root, 'skills'), watch: !remote,
     ...(remote ? { dshHome: path.posix.join(remote.home ?? remote.cwd, '.dsh'), agentsHome: path.posix.join(remote.home ?? remote.cwd, '.agents') } : {}) });
   await ctx.plugin({ name: 'f-skill-refresh', inject: ['skills'], apply(ctx) {
@@ -17,7 +17,7 @@ export async function mountSkills(ctx, { root, enabled = true }) {
       return { name: 'f-invalidation', list: async () => [], get: async () => undefined };
     });
   }});
-  await ctx.plugin({ name: 'f-tool-skill', inject: ['skills', 'tools', 'systemPrompt', 'host'], apply(ctx) {
+  await ctx.plugin({ name: 'f-tool-skill', inject: ['skills', 'refreshSkills', 'tools', 'systemPrompt', 'host'], apply(ctx) {
     if (enabled) ctx.tools.register({ name: 'skill', label: 'Skill',
       description: 'Load a named skill from the current catalog before performing a matching task.',
       parameters: objectSchema({ name: stringSchema }),

@@ -1,62 +1,31 @@
 ---
 name: f-workflow-plugins
-description: 为 F 编写或修改可复用 Workflow 脚本和 Agent 工具插件，规定输入素材、存放位置、工具接入、失败与取消行为。原生 UI 插件使用 f-plugins。
+description: 为 F 修改阶段实验工作流或 Agent 工具插件，规定目标树、素材、固定版本、候选审核、模型约束和可逆 Cordis 接入。原生 UI 插件使用 f-plugins。
 ---
 
-先读本技能资源根下 `../../gui-mac/PLUGIN_SPEC.md` 第 8 至 10 节，接口以规范和对应实现为准。
-修改 F 自身同时使用 f-maintenance；说明和结果文案使用 unslop。
+先读 `../../gui-mac/PLUGIN_SPEC.md` 第8至10节。修改 F 自身同时使用 f-maintenance；文案和报告应用 unslop。已有能力修改原实现，缺少时才新增，不另建一套编排器。
 
-## 选择位置与准备素材
-
-先查 `harness/src/index.mjs`、`harness/src/workflow/`、现有领域工具与项目 `.f/plugins/`。
-已有功能修改原实现，保持工具名、Schema 与已有数据兼容；新增只补缺少的能力。
-
-| 需求或素材 | 位置 |
+| 内容 | 位置 |
 | --- | --- |
-| 一次编排 | workflow 的 script 参数，async 函数体，不加 export |
-| 可复用任务说明和触发条件 | `skills/<name>/SKILL.md` |
-| 编排函数体或输出模板 | 同技能 `assets/`，加载后作为 script 或交给子 Agent |
-| 编写者阅读的领域约束 | 同技能 `references/`，从 SKILL.md 链接并说明何时读取 |
-| 项目本地热更新工具 | `.f/plugins/<id>/v1.mjs`，遵守第 9 节 HMR 契约 |
-| 随 F 发布的领域工具 | `harness/src/<domain>/index.mjs`，在组合入口挂载 Cordis 子作用域 |
-| 验证与虚拟输入 | `harness/tests/<domain>.test.mjs`，使用临时目录 |
-| 结果、用户数据和凭据 | 既有领域或会话存储，凭据复用现有认证服务 |
+| 阶段、分支与审核运行时 | `harness/src/workflow/`，通过 Cordis Service、inject 和 effect 管理 |
+| 持久目标树与用户选择 | `harness/src/aios/state.mjs`，只从真实用户 input 跨越用户审批门 |
+| 原始版本、固定起点、候选和私有发布 | `harness/src/versions/workflow.mjs` |
+| 子代理模型、深度和继承 | `harness/src/subagent/`，由运行时强制约束 |
+| 可复用任务规范与素材模板 | `skills/<name>/SKILL.md`，模板放 assets，领域说明放 references |
+| 项目本地热更新工具 | `.f/plugins/<id>/v1.mjs`，沿用第9节哈希与验收契约 |
+| 内置工具与注册 | `harness/src/<domain>/` 和 `harness/src/index.mjs` |
+| 回归和输入夹具 | `harness/tests/`，输出、临时仓库与测试 datasets 放临时目录 |
 
-确认目标、输入文件、输出格式与成功条件。素材保持原文和来源，args 只传 JSON 与绝对路径，
-文件由有权限的子 Agent 读取。不把密码、token 或无关素材塞进提示词和日志。
+准备真实输入、目标、允许修改路径、验收方法和素材来源。目标树包含唯一 id、title、objective 和可选 children，根的 children 按顺序对应阶段。工具用 plan 接收 tree，不再接收 JavaScript script、parallel 或 pipeline 函数体。
 
-## Workflow 函数体
+复杂流程固定为 begin 上传原始版本、plan 与一次用户批准、propose 三方向、review 由主 Agent 判方法、run 实验、独立精简与测试、report 阶段报告、用户选择1至3个候选，再进入下一阶段。
+每个入选起点都派3位作者。方向简介最多200字，阶段报告最多1000字。拒绝方向只重提该作者，测试失败 retry 恢复原实验者。不能让模型工具自己批准目标树或选版本。
 
-使用实际支持的 `agent`、`parallel`、`pipeline`、`phase`、`log` 与 `args`。
-meta 包含 name、description，可选 whenToUse、phases；不发明工具调用或 import 钩子。
-只有用户明确要求工作流或大型多 Agent 编排才启动 workflow，单步任务直接用已有工具。
-多 Agent 修改仍需资源租约，子 Agent 不能越过父任务范围或发布应用。
+实验分支必须从固定提交创建，作者自己 commit。顶层作者最多使用一次 split，最多3名实验孙代理；孙不能继续委派。所有分支都要通过不同于实验者的精简者与测试者，两种评审不能由同一身份担任。审核绑定实际提交，测试期间改动 HEAD、index 或工作文件必须失败。
+子代理统一为 cbi / deepseek-v4.1-flash / medium，不能只靠提示词约束。保留主线 skills、datasets、已启用应用和工具；工具白名单、插件禁用和主线只读约束必须继续生效。
 
-```javascript
-phase('检查素材');
-const report = await agent('读取 ' + args.source + '，返回文件路径与检查结论，不修改文件。', {
-  label: 'input-check', schema: { type: 'object', properties: {
-    path: { type: 'string' }, summary: { type: 'string' }
-  }, required: ['path', 'summary'], additionalProperties: false }
-});
-if (report === null) throw new Error('素材检查失败，未生成交付物');
-return report;
-```
+GitHub 只传原始快照及审核通过的候选快照，按阶段父版本建立快照父链，不传开发提交祖先。先排除凭据路径，再扫描内容；目的仓库必须查证私有。发布失败保留本地提交和失败证据，不清空工作树或强推。
 
-子 Agent 失败返回 null，不能转成空成功；依赖步骤须等待前一步成功。
-返回 JSON，不返回 NaN、函数或未等待的 Promise。默认并发上限 4，总 Agent 上限 32，
-按真实依赖拆解，不用无界循环重试。后台执行用 workflow_control 查状态或取消。
-断网、额度不足和上下文耗尽保留输入与已完成结果并报告失败；恢复前核对已有副作用。
+工具插件沿用 ctx.plugin、inject、ctx.tools.register、ctx.systemPrompt.register 和 ctx.effect。HMR 仍是显式审阅的自包含模块，父会话已批准的精确模块可继承到子作用域，重启不会自动执行磁盘插件。
 
-## 工具插件与验证
-
-内置工具使用 ctx.plugin、inject、ctx.tools.register、ctx.systemPrompt.register、ctx.effect，
-依赖可撤回，清理由作用域管理；照既有领域入口接入，不复制内核。
-项目 HMR 从 `harness/src/core/hmr-example.mjs` 改起，审阅并计算哈希后按用户请求显式加载。
-只用自包含单文件，不导入依赖，不替换原生 UI；test 调用每个工具并做真实断言。
-权限和外部写操作沿用现有服务边界，不因加入 workflow 获得额外授权。
-
-运行目标套件与 `harness/tests/workflow.test.mjs`，工具插件覆盖注册、调用与卸载。
-用隔离夹具检查正常输入、缺失素材、结构化输出、子任务失败、断网/额度错误、取消和再次运行，
-核对无遗留进程、重复副作用和串会话回调。不吞错，不把部分完成标为成功。
-维护 F 走完整隔离发布；skill 检查 frontmatter、链接与示例是否符合实际接口。
+验证实际 Git 分支、用户审批、失败打回、深度与身份、私有发布和凭据拒传；补取消、断网和恢复检查。运行 workflow、subagent、aios、versions 套件，并用真实固定模型验证主线 skill 热更新、共享 dataset 与工具继承。原生 F 更新继续走完整隔离构建和延迟重启。
