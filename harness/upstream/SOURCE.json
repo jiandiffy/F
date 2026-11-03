@@ -1,0 +1,180 @@
+{
+  "repository": "https://github.com/deepseek-ai/deepseek-harness",
+  "commit": "ce7073d51254c26cd63b22a60835b8f948deb447",
+  "verifiedAt": "2026-10-31",
+  "files": [
+    {
+      "path": "vendor/cosmokit/src/misc.ts",
+      "gitBlob": "11ed0a8597b12314f99cf39db10fec71cede8067",
+      "sha256": "117617943074ea57c15f216905dacd2f6d1c4c2ff16586f97a7a7a87dbf2141f"
+    },
+    {
+      "path": "vendor/cosmokit/src/array.ts",
+      "gitBlob": "18ed5e407fe6932b2ca9eb2267d63deffca3a8cf",
+      "sha256": "cf4de899ecffd66a90d8cef6f4c7d127d31f77f776d8e173d41c30d2d7632cf7"
+    },
+    {
+      "path": "vendor/cosmokit/src/volatile.ts",
+      "gitBlob": "a64c35f253e1619c20b8f95ee32fab0e1eb2684b",
+      "sha256": "937433215595f89da249ec7cabb89e331ff4135a40c6686a95666d2095315e55"
+    },
+    {
+      "path": "vendor/cosmokit/src/types.ts",
+      "gitBlob": "0aab4420c16776750ae4c5891ec3d6c3a1a8231b",
+      "sha256": "cc49c12e4a637f7b0754ff78a8299e9c42fa40ee8c678550af0c538a80146a92"
+    },
+    {
+      "path": "vendor/cosmokit/src/string.ts",
+      "gitBlob": "6f7084488196e9d73075dfcdb72cd5998ba6dfe6",
+      "sha256": "5564272b3e15e49235cbe3a8b453f27306baf282d23a893982841670f65d3c04"
+    },
+    {
+      "path": "vendor/cosmokit/src/time.ts",
+      "gitBlob": "6f9065493e56e8a5592704858a51a5d25f605a88",
+      "sha256": "49957c4608465a1fbd738186a92c47fffcd1fc4ba59dbf89524f8a773fe16fe2"
+    },
+    {
+      "path": "vendor/cosmokit/src/index.ts",
+      "gitBlob": "b6b7144168ae62cf1242fe051baa4ba35babcaa7",
+      "sha256": "1087da74b9c461984e547d524ee766eebcf329a78e4720bff5b60a004ccf6e8c"
+    },
+    {
+      "path": "vendor/cordis/src/utils.ts",
+      "gitBlob": "07f52e6477b2ecd7cc402c3025468c959cad7271",
+      "sha256": "c68bab85514ebd8cb08227367ea306b0109a214cd10965c497474eeadaaca756"
+    },
+    {
+      "path": "vendor/cordis/src/fiber.ts",
+      "gitBlob": "6da19b4767c79a9f8a019e701fa852a0b07d4072",
+      "sha256": "b64c3a97f15f0381479dcf3d25965e56dc4cecfa4a0881fc055a49f65b9945df"
+    },
+    {
+      "path": "vendor/cordis/src/events.ts",
+      "gitBlob": "9e7b6a6633bd661309968cc7743754d16965f62c",
+      "sha256": "a464c843822da4eb31a8d998c5e2216a817b8a7dfeacb6e1aab7f830e7320d6b"
+    },
+    {
+      "path": "vendor/cordis/src/logger.ts",
+      "gitBlob": "0dc97c16b35351fa74e811515e7e28ab45144962",
+      "sha256": "a6836ace311d0bd1abc9c1211cffcba73eff61c89ca47641efd82d91747401cb"
+    },
+    {
+      "path": "vendor/cordis/src/reflect.ts",
+      "gitBlob": "89123616a0cb99c8f97b312d76340f797cbe2d1f",
+      "sha256": "047f01fcdef2aa34b4afc39deaf18c16733fabd2a5ef0d55e5c2595b22caadfd"
+    },
+    {
+      "path": "vendor/cordis/src/registry.ts",
+      "gitBlob": "478cf036cb2339fcd6c092ee0cb6f2babc500014",
+      "sha256": "34bbd60ae502b4f85201c204afb52a9acabde6878d9278493478c1b2183debd3"
+    },
+    {
+      "path": "vendor/cordis/src/context.ts",
+      "gitBlob": "b7dcf44ff6003f5443fa6e117ebdc623ae13f8ec",
+      "sha256": "fd5a4f1d2bc6b8b34729c87fda7639a07759ce07fb070ab05374acbcb9ccdc0e"
+    },
+    {
+      "path": "vendor/cordis/src/service.ts",
+      "gitBlob": "dc5742f8c22d338e6aee874b5bca51b3e3031165",
+      "sha256": "614205c6ce7cf1a057b8b352e96aa4fcd734c967a3d2283a126c9c61f268e3be"
+    },
+    {
+      "path": "vendor/cordis/src/index.ts",
+      "gitBlob": "5c27008b44d50b8319ab3828ba02bd94adc5aa16",
+      "sha256": "071fb226e9a21556625e4391b28e6641b9b34b1cd402155246e0437993d8b740"
+    },
+    {
+      "path": "packages/util/values/src/partial-json.ts",
+      "gitBlob": "2fd6f7867eed136d7ca3ee558622c435995b4bd0",
+      "sha256": "d06228f26e0c670dc18615082b5be283f72a1562220c977c3c5d54edc0b5971e"
+    },
+    {
+      "path": "packages/util/values/src/index.ts",
+      "gitBlob": "b6488245de8b41004e335e1c276c7780d82f3dc9",
+      "sha256": "28a44a8df506ff9481de968135b8b20c240d7771f331bdc9e8cd634d04758858"
+    },
+    {
+      "path": "packages/core/scope/src/store.ts",
+      "gitBlob": "3b40693c8282782cbd847a4556aef9affe64a6ae",
+      "sha256": "e2f6c98e271cbae483393ccd1e5212a255def165a8a591d308efbd827af67278"
+    },
+    {
+      "path": "packages/core/scope/src/index.ts",
+      "gitBlob": "ef64440ac4c4aa579cc95898a467a91ff76bc4c3",
+      "sha256": "074b8f0c3fa2e240effd0a7e65c54be7c14debc1e53bb712334ce20d15affe4a"
+    },
+    {
+      "path": "vendor/schemastery/src/index.ts",
+      "gitBlob": "6edc132c49e2d0a2d845ddd00a8dae7d2d525380",
+      "sha256": "a6647b515659cf439b701fa9f9574c9c310ce3872d26a13a81e9fa4d02ba10ad"
+    },
+    {
+      "path": "packages/skill/skill/src/index.ts",
+      "gitBlob": "9c6bbf0ccfc87dfce966de1c9e83cb66275066af",
+      "sha256": "af4fad67fb086c3f5c93aed4604830718b4535e7e59a60d680404b07ea08477c"
+    },
+    {
+      "path": "packages/util/home-paths/src/index.ts",
+      "gitBlob": "c9787be24a38414808aebe23a05b4b6e560f8f96",
+      "sha256": "143a1583d9f5203f000da672de1dd27fe9994db9332d8c25f101c149c91cb643"
+    },
+    {
+      "path": "packages/skill/skill-filesystem/src/index.ts",
+      "gitBlob": "ea39cefb3d9f8e7b65150d64583360572fa6b346",
+      "sha256": "fec9bf70095a01fd7eb61e5a7aa77480490a17e663224ecaeb84852cb025207f"
+    },
+    {
+      "path": "packages/util/brand/src/index.ts",
+      "gitBlob": "7f89f3eddc5e78208da31eb0a6a40b09aa3f71fd",
+      "sha256": "f9d6da858d7308117227dcc2306ce7246b7309b2ae22d413d289cbae51e83e98"
+    },
+    {
+      "path": "packages/llm/llm/src/error.ts",
+      "gitBlob": "9be7cf9c00e2205b6e66facb921c209f904f26ac",
+      "sha256": "cd8657420bb84060ee45b1e72fa668df26b090532afd8afd2a96da983a74f792"
+    },
+    {
+      "path": "packages/core/tools/src/json-schema.ts",
+      "gitBlob": "c064fb294c7bb6349befc825699e3dc841766d30",
+      "sha256": "13deffdfd34539e23706b0fde235991da45b2f07c5c18dbbf3ca734c1da0c788"
+    },
+    {
+      "path": "packages/workflow/workflow/src/types.ts",
+      "gitBlob": "a08d3bbeeb4097e623bb0f06fc732267255ebbff",
+      "sha256": "1cf0e60951cdad1a5fc2907cddd0c37d1f195e534e12ac93d7379289f4230706"
+    },
+    {
+      "path": "packages/workflow/workflow/src/index.ts",
+      "gitBlob": "b78a9729770f3a68cf57877209e8b5d33291d0c0",
+      "sha256": "0f1f90b03be0061955df9c0820442663f59ce6dcc92d752d337368ada89e13bd"
+    },
+    {
+      "path": "packages/workflow/workflow-ptc/src/realm.ts",
+      "gitBlob": "68bc19fbcdc440ad659b90dec8a442167d967075",
+      "sha256": "1d093124621f3beee27fcc7ce2be202b6fade78ac8ddab20772b076be6e72375"
+    },
+    {
+      "path": "packages/workflow/workflow-ptc/src/runtime.ts",
+      "gitBlob": "71c153e586eb839a69ce176124b550b6f97530fb",
+      "sha256": "5c809ca0765c74f7a05fa8e33579fd1b27a22ec44da1712af66ac8f694e686af"
+    },
+    {
+      "path": "packages/workflow/workflow-ptc/src/meta.ts",
+      "gitBlob": "e7792791dd7ec588601196f01adffb371ebbd524",
+      "sha256": "dd1cb161f3d74d23f9564984ababf4dff66adbd62780cb649ef088aac2d385cb"
+    },
+    {
+      "path": "packages/workflow/workflow/src/runtime-types.ts",
+      "gitBlob": "65f99fd49c6be59bbc585dd4b81acf7337c814a6",
+      "sha256": "9bb5b2b01946ac9fc60a20f99a03f8e2bfcbc47f8a6142b8e9d0a6305e157448",
+      "role": "types"
+    },
+    {
+      "path": "packages/workflow/workflow-ptc/src/types.ts",
+      "gitBlob": "c8e3e39313581b9d75471333f41474733f5442ab",
+      "sha256": "a7362aad78b4753b83a6ea53dd4435a6b9085246e81732cb52d584a0dc3c3ca3",
+      "role": "types"
+    }
+  ],
+  "runtimeFiles": 32
+}
