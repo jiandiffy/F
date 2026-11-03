@@ -32,8 +32,14 @@ extension ConversationView {
         board.onPrompt = { [weak self] text in self?.askWhiteboard(text) }
     }
     func setProjectForTest(_ url: URL) { projectDirectory = url }
-    func responseCompletedForTest() {
-        handle(["type": "message_end", "message": ["role": "assistant", "stopReason": "stop", "content": [["type": "text", "text": "DONE"]]]])
+    func responseCompletedForTest(_ completion: @escaping () -> Void) {
+        // The reply follows message_start on the same RPC stream. A sent prompt
+        // alone does not mean that the UI has consumed that event yet.
+        agent.request(["type": "get_state"]) { response in
+            expect(response["success"] as? Bool == true, "RPC event barrier must complete")
+            self.handle(["type": "message_end", "message": ["role": "assistant", "stopReason": "stop", "content": [["type": "text", "text": "DONE"]]]])
+            completion()
+        }
     }
     func timeoutUpdateForTest() {
         let completion = checkpointCompletion
@@ -446,16 +452,17 @@ func checkpointCompletedRace() {
     held("ACK_FIRST_HOLD_UPDATE_COMPLETED") {
         let before = prompts().count
         view.inputForTest("UPDATE_COMPLETED_NEXT")
-        view.responseCompletedForTest() // Final stop arrived, but agent_settled is still pending.
-        view.interruptForUpdate(id: "abc-128") { result in
-            if case .failure(let error) = result { fatalError("checkpoint: \(error)") }
-            expect(view.updateResume(id: "abc-128", announcement: "").interruption?.promptCompleted == true, "completed response marker must precede checkpoint")
-            view.continueAfterUpdate()
-            eventually("completed response is not repeated", { view.idleForTest }) {
-                expect(Array(prompts().dropFirst(before)) == ["UPDATE_COMPLETED_NEXT"], "completed task must not be replayed")
-                print("PASS: final response before checkpoint is not replayed after settle")
-                view.cleanupForTest()
-                checkpointLateAbort()
+        view.responseCompletedForTest { // Final stop arrived, but agent_settled is still pending.
+            view.interruptForUpdate(id: "abc-128") { result in
+                if case .failure(let error) = result { fatalError("checkpoint: \(error)") }
+                expect(view.updateResume(id: "abc-128", announcement: "").interruption?.promptCompleted == true, "completed response marker must precede checkpoint")
+                view.continueAfterUpdate()
+                eventually("completed response is not repeated", { view.idleForTest }) {
+                    expect(Array(prompts().dropFirst(before)) == ["UPDATE_COMPLETED_NEXT"], "completed task must not be replayed")
+                    print("PASS: final response before checkpoint is not replayed after settle")
+                    view.cleanupForTest()
+                    checkpointLateAbort()
+                }
             }
         }
     }
