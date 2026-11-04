@@ -269,7 +269,6 @@ final class GlassComposer: NSView, NSTextViewDelegate {
         textView.isAutomaticTextReplacementEnabled = false
         textView.isContinuousSpellCheckingEnabled = false
         textView.delegate = self
-        textView.toolTip = "Enter 发送，Shift+Enter 换行；首行 ↑、末行 ↓ 浏览本项目输入历史"
         textView.onPlainReturn = { [weak self] in self?.submit() }
         textView.onHistory = { [weak self] older in self?.recallHistory(older: older) ?? false }
     }

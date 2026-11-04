@@ -11,10 +11,39 @@ private final class BrowserWorkspaceView: NSView {
     }
 }
 
+/// 标签条的一行：选中的标签用灰色作为强调色，其余标签背景保持透明。
+private final class BrowserTabRow: NSView {
+    private let current: Bool
+
+    init(frame: NSRect, current: Bool) {
+        self.current = current
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.masksToBounds = true
+        refresh()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func refresh() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = current ? ThemeColors.selected.cgColor : NSColor.clear.cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refresh()
+    }
+}
+
 final class BrowserPlugin: NSObject, FPlugin, FProcessActivity, WKNavigationDelegate, WKUIDelegate {
     let id = "browser", title = "浏览器", symbol = "globe"
     let placement = PluginPlacement.workspace
     let view: NSView = BrowserWorkspaceView()
+    private let toolbar = BrowserWorkspaceView()
+    var toolbarView: NSView? { toolbar }
     let session: FBrowserSession
     let directory: URL
     private let addressGlass = makeGlassView(cornerRadius: 15, withBorder: false, material: .hudWindow)
@@ -46,34 +75,53 @@ final class BrowserPlugin: NSObject, FPlugin, FProcessActivity, WKNavigationDele
         address.setAccessibilityLabel("搜索或网址")
         address.font = .systemFont(ofSize: 14); address.target = self; address.action = #selector(navigate)
         status.font = .systemFont(ofSize: 11); status.textColor = .secondaryLabelColor; status.isHidden = true
-        for item in [addressGlass,address,status] { view.addSubview(item) }
+        view.addSubview(toolbar)
+        for item in [addressGlass,address] { toolbar.addSubview(item) }
+        view.addSubview(status)
         tabScroll.documentView = tabList; FChrome.makeTransparent(tabScroll)
         tabScroll.hasHorizontalScroller = true; tabScroll.scrollerStyle = .overlay
-        for item in [back, forward, reload, tabScroll, add, newWindowButton] { view.addSubview(item) }
+        for item in [back, forward, reload] { toolbar.addSubview(item) }
+        for item in [tabScroll, add, newWindowButton] { view.addSubview(item) }
         for (button, command) in [(back,"back"),(forward,"forward"),(reload,"reload"),(add,"newTab"),(newWindowButton,"newWindow")] {
             button.identifier = NSUserInterfaceItemIdentifier(command); button.target = self; button.action = #selector(toolbarAction(_:))
         }
         (view as! BrowserWorkspaceView).layoutContent = { [weak self] in self?.layoutContent() }
         (view as! BrowserWorkspaceView).shortcut = { [weak self] in self?.handleShortcut($0) ?? false }
+        toolbar.layoutContent = { [weak self] in self?.layoutToolbar() }
+        toolbar.shortcut = { [weak self] in self?.handleShortcut($0) ?? false }
         refresh()
     }
     private func layoutContent() {
         let bounds = view.bounds
-        let width = max(0, min(480, bounds.width - 2 * FChrome.corner))
-        addressGlass.frame = NSRect(x: (bounds.width - width) / 2, y: bounds.height - 40, width: width, height: 30)
-        addressGlass.isHidden = width < 64
-        address.isHidden = addressGlass.isHidden
-        address.frame = NSRect(x: addressGlass.frame.minX + 12, y: addressGlass.frame.minY + 4, width: max(0, width - 24), height: 22)
+        if toolbar.superview === view {
+            toolbar.frame = NSRect(x: 0, y: bounds.height - FChrome.toolbarHeight, width: bounds.width, height: FChrome.toolbarHeight)
+        }
+        layoutToolbar()
         let rowY = bounds.height - FChrome.toolbarHeight - 32
-        for (i, button) in [back, forward, reload].enumerated() { button.frame = NSRect(x: 8 + CGFloat(i) * 30, y: rowY, width: 28, height: 28) }
         newWindowButton.frame = NSRect(x: max(0, bounds.width - 36), y: rowY, width: 28, height: 28)
         add.frame = NSRect(x: max(0, bounds.width - 68), y: rowY, width: 28, height: 28)
-        tabScroll.frame = NSRect(x: 102, y: rowY, width: max(0, bounds.width - 174), height: 28)
+        tabScroll.frame = NSRect(x: 8, y: rowY, width: max(0, bounds.width - 84), height: 28)
         tabList.frame = NSRect(origin: .zero, size: NSSize(width: CGFloat(tabs.count) * 144, height: 28))
         web?.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - FChrome.toolbarHeight - 36))
         let statusWidth = max(0, bounds.width - 48)
         let statusHeight = max(20, status.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: statusWidth, height: 1000)).height ?? 20)
         status.frame = NSRect(x: 24, y: max(0, rowY - statusHeight - 4), width: statusWidth, height: statusHeight)
+    }
+    private func layoutToolbar() {
+        let bounds = toolbar.bounds
+        let midY = bounds.height - 25
+        let rowHeight: CGFloat = 28
+        let leftEdge: CGFloat = 8, rightEdge = bounds.width - 8
+        let nav = [back, forward, reload]
+        for (i, button) in nav.enumerated() {
+            button.frame = NSRect(x: leftEdge + CGFloat(i) * 30, y: midY - rowHeight / 2, width: rowHeight, height: rowHeight)
+        }
+        let fieldX = reload.frame.maxX + 8
+        let fieldWidth = max(0, rightEdge - fieldX)
+        addressGlass.frame = NSRect(x: fieldX, y: midY - rowHeight / 2, width: fieldWidth, height: rowHeight)
+        addressGlass.isHidden = fieldWidth < 64
+        address.isHidden = addressGlass.isHidden
+        address.frame = NSRect(x: fieldX + 12, y: midY - 11, width: max(0, fieldWidth - 24), height: 22)
     }
     var menuCommands: [PluginMenuCommand] { [.init(title:"打开",id:"open"),.init(title:"输入网址或搜索",id:"address"),.init(title:"新建标签页",id:"newTab"),.init(title:"关闭标签页",id:"closeTab"),.init(title:"新建浏览器窗口",id:"newWindow"),.init(title:"后退",id:"back"),.init(title:"前进",id:"forward"),.init(title:"重新载入",id:"reload"),.separator,.init(title:"在 Chrome 登录当前网站…",id:"login"),.init(title:"连接 Chrome…",id:"chrome")] }
     func performMenuCommand(_ id: String) {
@@ -108,13 +156,14 @@ final class BrowserPlugin: NSObject, FPlugin, FProcessActivity, WKNavigationDele
     }
     func applyAppearance(dark: Bool) {
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        toolbar.appearance = view.appearance
         if !managesBridge { view.window?.appearance = view.appearance }
         address.textColor = .labelColor
         for tab in tabs { tab.web.appearance = view.appearance }
         for controller in windows { controller.browser.applyAppearance(dark: dark) }
     }
     private func ensureWeb() {
-        if web == nil { _ = newTab() }
+        if web == nil { newTab() }
     }
     @discardableResult func newTab(configuration: WKWebViewConfiguration? = nil) -> BrowserTab {
         let tab = BrowserTab(configuration: configuration ?? session.configuration()) { [weak self] in self?.refresh() }
@@ -141,7 +190,7 @@ final class BrowserPlugin: NSObject, FPlugin, FProcessActivity, WKNavigationDele
         tab.close(); tabs.remove(at: index)
         if selected {
             selectedTab = nil
-            if tabs.isEmpty { if enabled { _ = newTab() } }
+            if tabs.isEmpty { if enabled { newTab() } }
             else { selectTab(tabs[min(index, tabs.count - 1)]) }
         }
         refresh()
@@ -162,18 +211,28 @@ final class BrowserPlugin: NSObject, FPlugin, FProcessActivity, WKNavigationDele
         status.stringValue = loadError ?? ""; status.isHidden = loadError == nil
         for item in tabList.subviews { item.removeFromSuperview() }
         for (index, tab) in tabs.enumerated() {
-            let row = NSView(frame: NSRect(x: CGFloat(index) * 144, y: 0, width: 140, height: 28))
-            let button = NSButton(title: String((tab.web.title?.isEmpty == false ? tab.web.title! : tab.web.url?.host ?? "新标签页").prefix(24)), target: self, action: #selector(selectTabButton(_:)))
+            let current = tab === selectedTab
+            let title = String((tab.web.title?.isEmpty == false ? tab.web.title! : tab.web.url?.host ?? "新标签页").prefix(24))
+            let row = BrowserTabRow(frame: NSRect(x: CGFloat(index) * 144, y: 0, width: 140, height: 28), current: current)
+            let button = NSButton(title: "", target: self, action: #selector(selectTabButton(_:)))
             button.frame = NSRect(x: 0, y: 0, width: 116, height: 28)
-            button.tag = index; button.bezelStyle = .recessed; button.setButtonType(.pushOnPushOff); button.state = tab === selectedTab ? .on : .off
+            button.tag = index; button.isBordered = false; button.setButtonType(.pushOnPushOff); button.state = current ? .on : .off
+            button.attributedTitle = Self.tabText(title, weight: current ? .medium : .regular, color: current ? .labelColor : .secondaryLabelColor)
             button.lineBreakMode = .byTruncatingTail
             button.toolTip = tab.web.url?.absoluteString ?? "新标签页"
-            let close = NSButton(title: "×", target: self, action: #selector(closeTabButton(_:)))
+            let close = NSButton(title: "", target: self, action: #selector(closeTabButton(_:)))
             close.frame = NSRect(x: 116, y: 0, width: 24, height: 28)
             close.tag = index; close.isBordered = false; close.setAccessibilityLabel("关闭标签页")
+            close.attributedTitle = Self.tabText("×", weight: .regular, color: current ? .secondaryLabelColor : .tertiaryLabelColor)
             row.addSubview(button); row.addSubview(close); tabList.addSubview(row)
         }
         layoutContent()
+    }
+    private static func tabText(_ text: String, weight: NSFont.Weight, color: NSColor) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: weight),
+            .foregroundColor: color
+        ])
     }
     @objc private func selectTabButton(_ sender: NSButton) { selectTab(tabs[sender.tag]) }
     @objc private func closeTabButton(_ sender: NSButton) { closeTab(tabs[sender.tag]) }

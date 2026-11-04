@@ -83,7 +83,9 @@ final class RootView: NSView {
     private var initialConversationAvailable = true
 
     private var projectURL = ProjectStore.initial()
-    private var mode: WorkspaceMode = .application("whiteboard")
+    private var mode: WorkspaceMode = .application("whiteboard") {
+        didSet { needsLayout = true }
+    }
     private var pendingBoardStorageReload = false
     private var projectMutationBusy = false
     private var projectMutationGeneration = 0
@@ -134,7 +136,9 @@ final class RootView: NSView {
         // 文件夹可以直接拖到窗口任意位置（包括网页视图上方）。
         registerForDraggedTypes([.fileURL])
         (registry.plugins.filter { $0.placement == .workspace }.map(\.view) +
-         [activeConversation, bottomPanel, leftPanel, rightPanel, leftButton, addButton, bottomButton, rightButton, dropHint]).forEach(addSubview)
+         [activeConversation, bottomPanel, leftPanel, rightPanel] +
+         registry.plugins.filter { $0.placement == .workspace }.compactMap(\.toolbarView) +
+         [leftButton, addButton, bottomButton, rightButton, dropHint]).forEach(addSubview)
         bottomPanel.addSubview(bottomHost)
         refreshRightSidebar()
         hostObserver = NotificationCenter.default.addObserver(forName: .fSSHChanged, object: nil, queue: .main) { [weak self] _ in self?.populateProjectMenu() }
@@ -408,6 +412,7 @@ final class RootView: NSView {
         if case .application(let id) = mode, !plugins.isEnabled(id) { showConversation(nil) }
         for plugin in plugins.plugins where plugin.placement == .workspace {
             plugin.view.isHidden = mode != .application(plugin.id) || !plugins.isEnabled(plugin.id)
+            plugin.toolbarView?.isHidden = plugin.view.isHidden
         }
         if case .application(let id) = mode { leftSidebar.selectApplication(id) }
         refreshRightSidebar()
@@ -454,7 +459,10 @@ final class RootView: NSView {
         if project.path != projectURL.path { setProject(project) }
         else if plugin.projectAssociation == .project { plugin.projectDidChange(projectURL) }
         conversations.values.forEach { $0.isHidden = true }
-        for application in plugins.plugins where application.placement == .workspace { application.view.isHidden = application.id != id }
+        for application in plugins.plugins where application.placement == .workspace {
+            application.view.isHidden = application.id != id
+            application.toolbarView?.isHidden = application.view.isHidden
+        }
         leftSidebar.selectApplication(id)
         plugin.activate()
     }
@@ -734,6 +742,7 @@ final class RootView: NSView {
         mode = .conversation
         for plugin in plugins.plugins where plugin.placement == .workspace {
             plugin.view.isHidden = true
+            plugin.toolbarView?.isHidden = true
             plugin.deactivate()
         }
         for other in conversations.values where other !== view { other.isHidden = true }
@@ -915,7 +924,15 @@ final class RootView: NSView {
     }
 
     /// 停靠区默认右小左大，但允许拖到一半以上。
-    private func panelWidth(_ value: CGFloat) -> CGFloat { clampWidth(value) }
+    private func panelWidth(_ value: CGFloat) -> CGFloat {
+        let width = clampWidth(value)
+        guard case .application(let id) = mode, plugins.plugin(id)?.toolbarView != nil else { return width }
+        // Keep navigation and search usable without replacing the preferred panel widths.
+        let total = (leftOpen ? clampWidth(leftWidth) : 0) + (rightOpen ? clampWidth(rightWidth) : 0)
+        let corners: CGFloat = (leftOpen ? 0 : 84) + (rightOpen ? 0 : 84)
+        let available = max(0, bounds.width - corners - 200)
+        return total > available ? width * available / total : width
+    }
 
     private func leftInset() -> CGFloat { leftOpen ? panelWidth(leftWidth) : 0 }
     private func rightInset() -> CGFloat { rightOpen ? panelWidth(rightWidth) : 0 }
@@ -971,11 +988,13 @@ final class RootView: NSView {
         rightPanel.frame = rightFrame()
         bottomPanel.frame = bottomFrame()
         let workspace = conversationFrame()
+        let toolbarLeft = max(workspace.minX, addButton.frame.maxX)
+        let toolbarRight = min(workspace.maxX, bottomButton.frame.minX)
         conversations.values.forEach { $0.frame = workspace }
         for plugin in plugins.plugins where plugin.placement == .workspace {
-            // Whiteboard reserves the host corners; the browser places its search
-            // field between the host buttons and keeps web content below that row.
             plugin.view.frame = ["whiteboard", "browser"].contains(plugin.id) ? workspace : FChrome.nativeWorkspaceFrame(in: workspace)
+            plugin.toolbarView?.frame = NSRect(x: toolbarLeft, y: bounds.height - FChrome.toolbarHeight,
+                                              width: max(0, toolbarRight - toolbarLeft), height: FChrome.toolbarHeight)
         }
 
         let size = bottomPanel.bounds

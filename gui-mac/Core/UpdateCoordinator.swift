@@ -70,7 +70,7 @@ final class UpdateCoordinator {
         guard let data = try? Data(contentsOf: path), let resume = try? JSONDecoder().decode(UpdateResume.self, from: data), validID(resume.id) else { return }
         let directory = root.appendingPathComponent(resume.id, isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let pid = try? JSONSerialization.data(withJSONObject: ["pid": ProcessInfo.processInfo.processIdentifier])
+        let pid = try? JSONSerialization.data(withJSONObject: ["id": resume.id, "pid": ProcessInfo.processInfo.processIdentifier])
         try? pid?.write(to: directory.appendingPathComponent("boot.json"), options: .atomic)
     }
 
@@ -79,7 +79,8 @@ final class UpdateCoordinator {
             do {
                 let directory = Self.root.appendingPathComponent(resume.id)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                try Data("ready".utf8).write(to: directory.appendingPathComponent("ready.json"), options: .atomic)
+                let ready = try JSONSerialization.data(withJSONObject: ["id": resume.id, "pid": ProcessInfo.processInfo.processIdentifier])
+                try ready.write(to: directory.appendingPathComponent("ready.json"), options: .atomic)
                 // Consume the restart snapshot before dispatching any side-effecting continuation.
                 // If this fails, keep the conversations suspended rather than replay them on next boot.
                 try FileManager.default.removeItem(at: Self.root.appendingPathComponent("resume.json"))

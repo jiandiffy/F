@@ -66,9 +66,17 @@ func check(_ value: Bool,_ name:String) { guard value else { fatalError("FAIL: "
   plugin.setEnabled(true);plugin.activate();window.orderFront(nil);window.display()
   let web=plugin.web!;check(web.configuration.websiteDataStore === store,"browser uses the shared website profile")
   plugin.view.layout()
-  let field=plugin.view.subviews.compactMap { $0 as? NSTextField }.first { $0.isEditable }!
+  let toolbar=plugin.toolbarView!
+  toolbar.layout()
+  let field=toolbar.subviews.compactMap { $0 as? NSTextField }.first { $0.isEditable }!
   check(field.placeholderString?.isEmpty != false,"search field has no placeholder text")
-  check(field.frame.width < 480 && abs(field.frame.midY - (plugin.view.bounds.height - 25)) < 1,"compact search field aligns with the host button row")
+  let bounds=toolbar.bounds
+  let glass=toolbar.subviews.first{ $0 !== field && !($0 is NSScrollView) && !($0 is NSButton) && $0.frame.contains(field.frame) }!
+  check(field.toolTip==nil && glass.toolTip==nil,"input hover has no shortcut tooltip")
+  check(abs(field.frame.midY - (bounds.height - 25)) < 1,"search field aligns with the host button row")
+  check(abs(glass.frame.maxX - (bounds.width - 8)) < 1,"search surface fills its assigned toolbar with one edge inset")
+  check(abs(field.frame.maxX - (bounds.width - 20)) < 1,"search text fills the surface with its internal padding")
+  check(glass.frame.minY >= bounds.height - 39 && glass.frame.maxY <= bounds.height - 11,"search surface stays inside the host button row")
   check(web.frame.maxY == plugin.view.bounds.height - FChrome.toolbarHeight - 36,"web content starts below the address and navigation rows")
   web.loadHTMLString("<html><body><h1>Browser fixture</h1><button onclick=\"document.querySelector('h1').textContent='CLICKED'\">Press</button><input name='normal'><input type='password' value='SECRET_FIXTURE'><input type='hidden' value='HIDDEN_FIXTURE'></body></html>",baseURL:URL(string:"https://app.example.test"))
   for _ in 0..<200 { if !web.isLoading, (try? await web.evaluateJavaScript("document.body?.innerText.includes('Browser fixture')")) as? Bool == true { break };try await Task.sleep(nanoseconds:50_000_000) }
@@ -128,6 +136,10 @@ func check(_ value: Bool,_ name:String) { guard value else { fatalError("FAIL: "
   plugin.open(URL(string:base+"/account")!)
   try await wait(second.web,"document.querySelector('#account')?.textContent==='signed in'")
   check(first.web !== second.web && second.web.configuration.websiteDataStore === store,"tabs own independent pages and share F login")
+  let tabRows=plugin.view.subviews.compactMap{$0 as? NSScrollView}.first!.documentView!.subviews
+  let selectedTabBackground=(tabRows.count==2 ? tabRows[1].layer?.backgroundColor : nil).flatMap{NSColor(cgColor:$0)?.usingColorSpace(.sRGB)}
+  check(tabRows.count==2 && (tabRows[0].layer?.backgroundColor).flatMap{NSColor(cgColor:$0)?.alphaComponent} == 0,"unselected tabs keep a transparent background")
+  check(selectedTabBackground.map{abs($0.redComponent-$0.greenComponent)<0.02 && abs($0.greenComponent-$0.blueComponent)<0.02 && $0.alphaComponent>0.02} == true,"selected tab uses a grey accent")
   try await second.web.evaluateJavaScript("document.querySelector('input').value='second tab draft'")
   plugin.selectTab(first);check(plugin.web === web,"switching tabs restores the original WebKit instance")
   let firstRead=await call(plugin,["action":"read"]),firstState=firstRead["value"] as! [String:Any]
@@ -184,10 +196,21 @@ func check(_ value: Bool,_ name:String) { guard value else { fatalError("FAIL: "
   _=await call(plugin,["action":"closeTab","tabId":temporaryID])
   check((await call(plugin,["action":"selectTab","tabId":temporaryID]))["ok"] as? Bool==false,"closed tab IDs cannot select a replacement page")
   window.setContentSize(NSSize(width:390,height:650));window.display();plugin.view.layoutSubtreeIfNeeded()
-  let toolbarButtons=plugin.view.subviews.compactMap{$0 as? NSButton}
-  check(toolbarButtons.allSatisfy{plugin.view.bounds.contains($0.frame)},"browser controls stay inside a narrow window")
+  toolbar.layout()
+  let toolbarButtons=toolbar.subviews.compactMap{$0 as? NSButton}
+  check(toolbarButtons.allSatisfy{toolbar.bounds.contains($0.frame)},"browser controls stay inside a narrow window")
   let tabScroll=plugin.view.subviews.compactMap{$0 as? NSScrollView}.first!
   check(tabScroll.documentView!.frame.width >= 140 && tabScroll.documentView!.subviews.first!.frame.width==140,"tab label and close control have visible frames")
+  let navButtons=toolbar.subviews.compactMap{$0 as? NSButton}.filter{["back","forward","reload"].contains($0.identifier?.rawValue ?? "")}
+  let navGlass=toolbar.subviews.first{ $0 !== field && !($0 is NSScrollView) && !($0 is NSButton) && $0.frame.contains(field.frame) }!
+  let rowBounds=toolbar.bounds
+  check(navButtons.count==3 && navButtons.allSatisfy{abs($0.frame.midY-field.frame.midY)<1},"back, forward, reload and the search field share one row")
+  check(navButtons.map{$0.frame.minX}.min()! == 8,"navigation buttons use one inset inside the assigned toolbar")
+  check(navButtons.map{$0.frame.maxX}.max()! < field.frame.minX,"navigation buttons stay left of the search field")
+  check(abs(navGlass.frame.minX - (navButtons.map{$0.frame.maxX}.max()! + 8)) < 1,"search surface begins after the navigation buttons")
+  check(abs(navGlass.frame.maxX - (rowBounds.width - 8)) < 1,"search surface fills the assigned toolbar up to its right inset")
+  check(navGlass.frame.height <= 28 && navGlass.frame.height >= 26,"search surface matches the host button row height")
+  check(tabScroll.frame.minX==8 && tabScroll.frame.maxY <= toolbar.frame.minY,"tab strip sits on its own row below the toolbar")
   for key in ["t","w"] {
    let event=NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:.command,timestamp:0,windowNumber:window.windowNumber,context:nil,characters:key,charactersIgnoringModifiers:key,isARepeat:false,keyCode:0)!
    check(plugin.view.performKeyEquivalent(with:event),"Cmd+\(key) is handled by browser workspace")

@@ -62,6 +62,8 @@ protocol FPlugin: AnyObject {
     var projectAssociation: PluginProjectAssociation { get }
     var menuCommands: [PluginMenuCommand] { get }
     var view: NSView { get }
+    /// Optional top row constrained to the workspace and host corner controls.
+    var toolbarView: NSView? { get }
     var sidebarView: NSView? { get }
     var onRequestSidebar: (() -> Void)? { get set }
     func performMenuCommand(_ id: String)
@@ -77,6 +79,7 @@ protocol FPlugin: AnyObject {
 }
 
 extension FPlugin {
+    var toolbarView: NSView? { nil }
     var requiredServices: [String] { [] }
     var providedServices: [String] { ["plugin." + id] }
     func mount(in scope: FPluginScope) {

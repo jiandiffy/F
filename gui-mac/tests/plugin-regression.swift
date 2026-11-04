@@ -68,6 +68,7 @@ extension RootView {
     func checkNativeWorkspaceChromeForTest() {
         let saved = frame, wasLeft = leftOpen, wasRight = rightOpen, wasBottom = bottomOpen
         defer { frame = saved; leftOpen = wasLeft; rightOpen = wasRight; bottomOpen = wasBottom; layout() }
+        showApplication("browser")
         for width in [CGFloat(520), CGFloat(900)] {
             for (left, right) in [(false,false), (true,false), (false,true), (true,true)] {
                 frame.size = NSSize(width: width, height: 600)
@@ -79,22 +80,55 @@ extension RootView {
                 }
                 let browser = plugins.plugin("browser") as! BrowserPlugin
                 browser.view.layout()
-                let field = browser.view.subviews.compactMap { $0 as? NSTextField }.first { $0.isEditable }!
-                expect(browser.view.frame == conversationFrame(), "browser uses the button row without a second toolbar")
+                let toolbar = browser.toolbarView!
+                toolbar.layout()
+                let field = toolbar.subviews.compactMap { $0 as? NSTextField }.first { $0.isEditable }!
+                expect(browser.view.frame == conversationFrame(), "browser page stays in the workspace")
+                expect(toolbar.superview === self && toolbar.frame.minX >= browser.view.frame.minX && toolbar.frame.maxX <= browser.view.frame.maxX, "browser toolbar stays between the expanded sidebars")
                 expect(field.placeholderString?.isEmpty != false, "search field has no placeholder")
+                expect(!field.isHidden, "narrow windows keep room for navigation and search with both sidebars open")
                 if !field.isHidden {
-                    let rect = convert(field.frame, from: browser.view)
+                    let rect = convert(field.frame, from: toolbar)
                     expect(abs(rect.midY - bottomButton.frame.midY) < 1, "search aligns with sidebar and bottom buttons")
                     expect(rect.minX >= addButton.frame.maxX + 8 && rect.maxX <= bottomButton.frame.minX - 8, "search never covers host buttons with either sidebar open")
-                    expect(rect.width <= 480, "search remains compact")
+                    expect(abs(rect.maxX - (min(browser.view.frame.maxX, bottomButton.frame.minX) - 20)) < 1, "search fills the available row up to the sidebar or software buttons")
+                    let back = toolbar.subviews.first { $0.identifier?.rawValue == "back" }!
+                    expect(abs(convert(back.frame, from: toolbar).minX - (max(browser.view.frame.minX, addButton.frame.maxX) + 8)) < 1, "navigation begins after the sidebar or software buttons with one inset")
+                    for item in toolbar.subviews {
+                        let itemRect = convert(item.frame, from: toolbar)
+                        expect(!left || !itemRect.intersects(leftPanel.frame), "browser control never overlaps the open left sidebar")
+                        expect(!right || !itemRect.intersects(rightPanel.frame), "browser control never overlaps the open right sidebar")
+                        expect(!itemRect.intersects(addButton.frame) && !itemRect.intersects(bottomButton.frame), "browser control never overlaps software buttons")
+                    }
+                    expect(field.toolTip == nil && toolbar.toolTip == nil, "browser input has no hover shortcut hint")
                 }
                 expect(whiteboardView.frame == conversationFrame(), "whiteboard keeps its existing web chrome insets")
             }
         }
+        showApplication("browser")
+        expect(plugins.plugin("browser")!.toolbarView?.isHidden == false, "browser toolbar is visible only with its workspace")
+        showConversation(nil)
+        expect(plugins.plugin("browser")!.toolbarView?.isHidden == true, "browser toolbar hides when returning to chat")
     }
     func resumeFixtureDrafts() {
         conversationView.setUpdateFixture()
         whiteboardView.draftText = "board draft"
+    }
+    /// 输入框悬停不应出现快捷键提示：合成器里任何控件的 tooltip 都不能讲按键。
+    func checkComposerHasNoShortcutHints() {
+        let composer = GlassComposer(frame: NSRect(x: 0, y: 0, width: 700, height: 80))
+        composer.layoutSubtreeIfNeeded()
+        var hints: [String] = []
+        var textViews = 0
+        func walk(_ view: NSView) {
+            if view is NSTextView { textViews += 1 }
+            if let tip = view.toolTip { hints.append(tip) }
+            view.subviews.forEach(walk)
+        }
+        walk(composer)
+        expect(textViews >= 1, "composer keeps its text input")
+        expect(hints.allSatisfy { hint in !["Enter", "↩", "⌘", "Cmd", "Shift"].contains { hint.contains($0) } },
+               "composer never shows a shortcut hint on hover")
     }
     func checkUpdateAnnouncement(_ notice: String, _ done: @escaping () -> Void) {
         conversationView.updateAnnouncementForTest(notice, done)
@@ -368,6 +402,7 @@ func pluginToggleChecks() {
     ProjectStore.remember(root)
     let rootView = RootView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
     rootView.checkNativeWorkspaceChromeForTest()
+    rootView.checkComposerHasNoShortcutHints()
     let menus = AppDelegate()
     rootView.onPluginsChanged = { menus.menusForTest(rootView) }
     menus.menusForTest(rootView)
