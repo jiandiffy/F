@@ -983,18 +983,22 @@ final class RootView: NSView {
         )
     }
 
+    private func toolbarFrame(in workspace: NSRect) -> NSRect {
+        let left = max(workspace.minX, addButton.frame.maxX)
+        let right = min(workspace.maxX, bottomButton.frame.minX)
+        return NSRect(x: left, y: bounds.height - FChrome.toolbarHeight,
+                      width: max(0, right - left), height: FChrome.toolbarHeight)
+    }
+
     private func applyFrames() {
         leftPanel.frame = leftFrame()
         rightPanel.frame = rightFrame()
         bottomPanel.frame = bottomFrame()
         let workspace = conversationFrame()
-        let toolbarLeft = max(workspace.minX, addButton.frame.maxX)
-        let toolbarRight = min(workspace.maxX, bottomButton.frame.minX)
         conversations.values.forEach { $0.frame = workspace }
         for plugin in plugins.plugins where plugin.placement == .workspace {
             plugin.view.frame = ["whiteboard", "browser"].contains(plugin.id) ? workspace : FChrome.nativeWorkspaceFrame(in: workspace)
-            plugin.toolbarView?.frame = NSRect(x: toolbarLeft, y: bounds.height - FChrome.toolbarHeight,
-                                              width: max(0, toolbarRight - toolbarLeft), height: FChrome.toolbarHeight)
+            plugin.toolbarView?.frame = toolbarFrame(in: workspace)
         }
 
         let size = bottomPanel.bounds
@@ -1192,7 +1196,10 @@ final class RootView: NSView {
             self.bottomPanel.animator().frame = self.bottomFrame()
             let workspace = self.conversationFrame()
             self.conversations.values.forEach { $0.animator().frame = workspace }
-            for plugin in self.plugins.plugins where plugin.placement == .workspace { plugin.view.animator().frame = workspace }
+            for plugin in self.plugins.plugins where plugin.placement == .workspace {
+                plugin.view.animator().frame = ["whiteboard", "browser"].contains(plugin.id) ? workspace : FChrome.nativeWorkspaceFrame(in: workspace)
+                plugin.toolbarView?.animator().frame = self.toolbarFrame(in: workspace)
+            }
             let size = self.bottomPanel.bounds
             self.bottomHost.animator().frame = NSRect(x: 10, y: 8, width: max(0, size.width - 20), height: max(0, size.height - 22))
         } completionHandler: { [weak self] in

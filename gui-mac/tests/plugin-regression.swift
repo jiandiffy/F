@@ -65,6 +65,31 @@ extension TerminalView {
 }
 
 extension RootView {
+    func checkBrowserPanelAnimationForTest(_ done: @escaping () -> Void) {
+        showApplication("browser")
+        leftOpen = false; rightOpen = false; bottomOpen = false; layout()
+        let states = [(true,false), (true,true), (false,true), (false,false)]
+        func step(_ index: Int) {
+            guard index < states.count else { done(); return }
+            (leftOpen, rightOpen) = states[index]
+            animateLayout()
+            var samples = 0
+            var timer: Timer?
+            timer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in
+                self.layoutSubtreeIfNeeded()
+                let toolbar = self.plugins.plugin("browser")!.toolbarView!
+                expect(toolbar.frame.minX >= max(0, self.leftPanel.frame.maxX) - 0.5, "toolbar avoids the left sidebar throughout its animation")
+                expect(toolbar.frame.maxX <= min(self.bounds.width, self.rightPanel.frame.minX) + 0.5, "toolbar avoids the right sidebar throughout its animation")
+                samples += 1
+                if self.animatingCount == 0 {
+                    timer?.invalidate(); timer = nil
+                    expect(samples >= 3, "sidebar animation is sampled before completion")
+                    step(index + 1)
+                }
+            }
+        }
+        step(0)
+    }
     func checkNativeWorkspaceChromeForTest() {
         let saved = frame, wasLeft = leftOpen, wasRight = rightOpen, wasBottom = bottomOpen
         defer { frame = saved; leftOpen = wasLeft; rightOpen = wasRight; bottomOpen = wasBottom; layout() }
@@ -394,6 +419,16 @@ func folderDropChecks(_ done: @escaping () -> Void) {
     delegate.cleanupMenusForTest()
     print("PASS: folder drop immediately adds a project; its first message adds an indented conversation")
     done()
+}
+func browserAnimationChecks(_ done: @escaping () -> Void) {
+    let host = RootView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
+    let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false; window.contentView = host; window.orderFront(nil)
+    host.checkBrowserPanelAnimationForTest {
+        host.shutdownPlugins(); window.close()
+        print("PASS: browser toolbar stays clear of both sidebars throughout open and close animations")
+        done()
+    }
 }
 func pluginToggleChecks() {
     let defaults = UserDefaults.standard
@@ -909,6 +944,6 @@ BoardStore.setRoot(root.appendingPathComponent("boards"))
 let remoteTerminal = TerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 200))
 let browser = RemoteBrowserView(frame: NSRect(x: 0, y: 0, width: 300, height: 500))
 var transport: SSHTransport!
-TerminalView.checkClearSequences { updateResumeChecks { folderDropChecks { configAndLifecycle(); localTerminal() } } }
+TerminalView.checkClearSequences { updateResumeChecks { folderDropChecks { browserAnimationChecks { configAndLifecycle(); localTerminal() } } } }
 DispatchQueue.main.asyncAfter(deadline: .now() + 100) { fputs("FAIL: plugin suite timed out\n", stderr); exit(1) }
 app.run()
