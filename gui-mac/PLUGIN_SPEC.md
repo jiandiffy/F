@@ -201,7 +201,7 @@ F 设置中的每日09:00开关由 `DailyPaperSchedule` 管理用户级 launchd 
 
 ### 浏览器与 Chrome 登录桥接
 
-`Plugins/Browser` 提供 `browser` 独立工作区，透明地址/搜索框下方为后退、前进、刷新/停止、标签栏、新建标签和独立窗口。Cmd+L/T/N/W/R、Cmd+[/] 分别选择地址、新建标签/窗口、关闭标签、刷新和导航。每页独立保留历史、表单与错误。target=_blank 和 window.open 用 WebKit 提供的原配置创建窗口，保留 opener 与登录回传；页面可关闭自己的弹窗。原生网页对话框显示在所属窗口。网页启用脚本、禁止自动媒体播放；无原生消息桥和本机文件 URL。首次打开才创建网页，切换应用保留全部页面，禁用释放页面、独立窗口和控制端点。
+`Plugins/Browser` 提供 `browser` 独立工作区，透明地址/搜索框下方为后退、前进、刷新/停止、标签栏、新建标签和独立窗口。Cmd+L/T/N/W/R、Cmd+[/] 分别选择地址、新建标签/窗口、关闭标签、刷新和导航。每页独立保留历史、表单与错误。普通 target=_blank 链接在当前页继续浏览，保留后退历史；window.open 和新窗口表单使用 WebKit 原配置，在主浏览器中创建标签，保留 opener 与登录回传。脚本关闭标签后返回原标签。网页不自动弹出独立窗口，独立窗口仅由用户菜单或 Cmd+N 创建。原生网页对话框显示在所属窗口。网页启用脚本、禁止自动媒体播放；无原生消息桥和本机文件 URL。首次打开才创建网页，切换应用保留全部页面，禁用释放页面、独立窗口和控制端点。
 
 生产环境沿用 F 固定应用身份的默认持久 `WKWebsiteDataStore`，与 Daily Paper 共用，独立于 Chrome。用户在 F 网页手动登录普通网站，Cookie/localStorage 由 WebKit 保存，各标签和窗口共享会话，关闭插件不清除账号。隔离测试使用非持久夹具与独立标识的持久测试 profile。[Google OAuth 政策](https://developers.google.com/identity/protocols/oauth2/policies) 禁止受应用控制的内嵌登录，F 显示原因，由用户选择菜单中的 Chrome 登录及可选桥接，不自动启动外部浏览器，不伪装 User-Agent 绕过限制。Google 密码、通行密钥及 Google 网站会话不导出。API Key 不能替代网页登录。
 
@@ -213,7 +213,8 @@ Agent 的 Cordis `browser` 能力由 `harness/src/browser/index.mjs` 注册，�
 
 Native IPC 端点位于 `PluginStorage.directory(for:"browser")`，目录0700、连接与消息0600。Cookie请求使用当前实例随机密钥的 AES-GCM 加密，Chrome Native Messaging 仅传入本机，不经过模型或命令行参数；返回只有来源和数量。最多4个进行中请求，超时30秒，旧消息定期清理。关闭注销端点，不抢占其他存活实例；这是同一系统用户下的受信代码接口，并非对恶意本机代码的系统沙箱。
 
-聚焦回归为 `tests/run-browser-tests.py` 与 `harness/tests/browser.test.mjs`，覆盖隔离站点表单登录、会话共享与恢复、多标签/窗口、弹窗回传、前进后退、断网恢复、页面进程终止、透明显示、Cookie范围、快照失效、真实Node/CryptoKit互通及关闭释放。第三方真实账号登录不由夹具代替。
+聚焦回归为 `tests/run-browser-tests.py` 与 `harness/tests/browser.test.mjs`，覆盖隔离站点表单登录、会话共享与恢复、多标签/窗口、标签回传、新窗口表单的POST正文、前进后退、断网恢复、页面进程终止、透明显示、Cookie范围、快照失效、真实Node/CryptoKit互通及关闭释放。第三方真实账号登录不由夹具代替。
+从源码根目录运行 `F_BROWSER_LIVE_SCHOLAR=1 python3 gui-mac/tests/run-browser-tests.py` 可用隔离会话实测 Scholar。测试把真实论文结果设为新窗口目标，检查仍在当前页打开及前进后退，并在输出目录保存截图和 `live-scholar.json`。不修改用户账号或搜索偏好。
 
 ## 8. 微内核服务与作用域
 

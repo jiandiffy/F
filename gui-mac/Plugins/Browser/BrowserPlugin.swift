@@ -191,16 +191,17 @@ final class BrowserPlugin: NSObject, FPlugin, FProcessActivity, WKNavigationDele
         if selected {
             selectedTab = nil
             if tabs.isEmpty { if enabled { newTab() } }
+            else if let opener = tab.opener, tabs.contains(where: { $0 === opener }) { selectTab(opener) }
             else { selectTab(tabs[min(index, tabs.count - 1)]) }
         }
         refresh()
     }
-    @discardableResult func newWindow(configuration: WKWebViewConfiguration? = nil) -> BrowserPlugin {
+    @discardableResult func newWindow() -> BrowserPlugin {
         let browser = BrowserPlugin(directory: directory, session: session, managesBridge: false)
         browser.setEnabled(true); browser.applyAppearance(dark: ThemeColors.isDark(view.effectiveAppearance))
         let controller = BrowserWindowController(browser: browser)
         controller.onClose = { [weak self, weak controller] in self?.windows.removeAll { $0 === controller } }
-        windows.append(controller); browser.newTab(configuration: configuration)
+        windows.append(controller); browser.newTab()
         controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil)
         return browser
     }
@@ -271,7 +272,14 @@ final class BrowserPlugin: NSObject, FPlugin, FProcessActivity, WKNavigationDele
     }
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard enabled, let url = action.request.url, !FBrowserSession.googleAuthentication(url), FBrowserSession.origin(url) != nil || url.absoluteString == "about:blank" else { return nil }
-        return newWindow(configuration: configuration).web
+        if action.navigationType == .linkActivated {
+            webView.load(action.request)
+            return nil
+        }
+        let opener = tabs.first { $0.web === webView }
+        let tab = newTab(configuration: configuration)
+        tab.opener = opener
+        return tab.web
     }
     private func dialog(_ message: String, from webView: WKWebView, buttons: [String], input: NSTextField? = nil, completion: @escaping (NSApplication.ModalResponse) -> Void) {
         guard let window = webView.window else { completion(.abort); return }
@@ -290,8 +298,7 @@ final class BrowserPlugin: NSObject, FPlugin, FProcessActivity, WKNavigationDele
         dialog(prompt, from: webView, buttons: ["确定", "取消"], input: input) { completionHandler($0 == .alertFirstButtonReturn ? input.stringValue : nil) }
     }
     func webViewDidClose(_ webView: WKWebView) {
-        if tabs.count == 1, !managesBridge { view.window?.close() }
-        else if let tab = tabs.first(where: { $0.web === webView }) { closeTab(tab) }
+        if let tab = tabs.first(where: { $0.web === webView }) { closeTab(tab) }
     }
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         if let tab = tabs.first(where: { $0.web === webView }) { tab.snapshot = nil; tab.loadError = nil }

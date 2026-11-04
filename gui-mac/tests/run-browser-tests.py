@@ -21,8 +21,8 @@ func check(_ value: Bool,_ name:String) { guard value else { fatalError("FAIL: "
   let state=await call(p,["action":"state"])
   fatalError("Browser did not finish navigation: \(state)")
  }
- @MainActor static func wait(_ web:WKWebView,_ script:String) async throws {
-  for _ in 0..<200 { if (try? await web.evaluateJavaScript(script)) as? Bool == true { return };try await Task.sleep(nanoseconds:50_000_000) }
+ @MainActor static func wait(_ web:WKWebView,_ script:String,attempts:Int=200) async throws {
+  for _ in 0..<attempts { if (try? await web.evaluateJavaScript(script)) as? Bool == true { return };try await Task.sleep(nanoseconds:50_000_000) }
   print("THEME DIAGNOSTIC:", (try? await web.evaluateJavaScript("JSON.stringify({url:location.href,style:!!document.querySelector('#f-browser-theme'),body:document.body?.outerHTML.slice(0,7000),panel:document.querySelector('#panel')?getComputedStyle(document.querySelector('#panel')).backgroundColor:null})")) ?? "unavailable");fflush(stdout)
   fatalError("Timed out: "+script)
  }
@@ -52,6 +52,29 @@ func check(_ value: Bool,_ name:String) { guard value else { fatalError("FAIL: "
   }
   plugin.shutdown()
  }
+ @MainActor static func liveScholar(_ plugin:BrowserPlugin) async throws {
+  let web=plugin.web!,tab=plugin.selectedTab!,count=plugin.tabs.count
+  plugin.open(URL(string:"https://scholar.google.com/scholar?hl=en&q=Attention+Is+All+You+Need")!)
+  try await wait(web,"document.querySelector('.gs_rt a[href]') !== null && document.readyState === 'complete'",attempts:600)
+  let results=web.url!
+  // Exercise the new-window target on a real Scholar result, without changing account preferences.
+  let link=try await web.evaluateJavaScript("(()=>{const a=document.querySelector('.gs_rt a[href]');const originalTarget=a.target;a.target='_blank';return {title:a.innerText,href:a.href,originalTarget,target:a.target}})()") as! [String:Any]
+  try await capture(web,"live-scholar-results")
+  try await web.evaluateJavaScript("document.querySelector('.gs_rt a[href]').click()")
+  try await wait(web,"location.hostname !== 'scholar.google.com' && document.readyState === 'complete' && document.body.innerText.includes('Attention')",attempts:600)
+  let paper=web.url!
+  check(plugin.windows.isEmpty && plugin.selectedTab === tab && plugin.web === web && plugin.tabs.count==count,"live Google Scholar paper opens in the current main browser page without a popup or extra tab")
+  try await capture(web,"live-scholar-paper")
+  web.goBack()
+  try await wait(web,"document.querySelector('.gs_rt a[href]') !== null && document.readyState === 'complete'",attempts:600)
+  check(web.url==results,"live Google Scholar back restores the search results")
+  web.goForward()
+  try await wait(web,"location.hostname !== 'scholar.google.com' && document.readyState === 'complete' && document.body.innerText.includes('Attention')",attempts:600)
+  check(web.url==paper && plugin.windows.isEmpty && plugin.selectedTab === tab,"live Google Scholar forward restores the paper in the same browser page")
+  let report:[String:Any]=["passed":true,"search":results.absoluteString,"link":link,"paper":paper.absoluteString,"nativeWindows":plugin.windows.count,"sameTab":plugin.selectedTab === tab,"back":true,"forward":true]
+  try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:ProcessInfo.processInfo.environment["F_BROWSER_SCREENSHOTS"]!).appendingPathComponent("live-scholar.json"))
+  print("PASS: live Google Scholar search, paper, back and forward in the main browser page")
+ }
  @MainActor static func main() async throws {
   _=NSApplication.shared;NSApplication.shared.setActivationPolicy(.accessory)
   if let mode=ProcessInfo.processInfo.environment["F_BROWSER_PROFILE_MODE"], #available(macOS 14.0, *) { try await persistent(mode);return }
@@ -65,6 +88,9 @@ func check(_ value: Bool,_ name:String) { guard value else { fatalError("FAIL: "
   let window=NSWindow(contentRect:NSRect(x:0,y:0,width:900,height:650),styleMask:[.titled],backing:.buffered,defer:false);window.isReleasedWhenClosed=false;window.contentView=plugin.view
   plugin.setEnabled(true);plugin.activate();window.orderFront(nil);window.display()
   let web=plugin.web!;check(web.configuration.websiteDataStore === store,"browser uses the shared website profile")
+  if ProcessInfo.processInfo.environment["F_BROWSER_LIVE_SCHOLAR"]=="1" {
+   try await liveScholar(plugin);plugin.shutdown();window.close();return
+  }
   plugin.view.layout()
   let toolbar=plugin.toolbarView!
   toolbar.layout()
@@ -159,17 +185,25 @@ func check(_ value: Bool,_ name:String) { guard value else { fatalError("FAIL: "
   plugin.windows.first!.close();check(plugin.windows.isEmpty && plugin.tabs.count==2,"closing a browser window leaves workspace tabs intact")
   plugin.selectTab(first)
   try await web.evaluateJavaScript("void window.open('/popup','f-login-fixture')")
-  for _ in 0..<200 { if let popup=plugin.windows.first?.browser.web, (try? await popup.evaluateJavaScript("document.querySelector('#popup')!==null")) as? Bool == true { break };try await Task.sleep(nanoseconds:50_000_000) }
-  check(plugin.windows.count==1,"window.open creates a real WebKit popup")
-  let popup=plugin.windows.first!.browser.web!
+  for _ in 0..<200 { if let popup=plugin.web, popup !== web, (try? await popup.evaluateJavaScript("document.querySelector('#popup')!==null")) as? Bool == true { break };try await Task.sleep(nanoseconds:50_000_000) }
+  check(plugin.windows.isEmpty && plugin.tabs.count==3 && plugin.web?.window === window,"window.open stays in a tab inside the main browser window")
+  let popup=plugin.web!
   try await popup.evaluateJavaScript("window.opener.document.body.setAttribute('data-popup-result','returned');window.close()")
   try await wait(web,"document.body.getAttribute('data-popup-result')==='returned'")
-  for _ in 0..<100 { if plugin.windows.isEmpty { break };try await Task.sleep(nanoseconds:20_000_000) }
-  check(plugin.windows.isEmpty,"popup preserves opener and closes after login-style handoff")
+  for _ in 0..<100 { if plugin.tabs.count==2 { break };try await Task.sleep(nanoseconds:20_000_000) }
+  check(plugin.windows.isEmpty && plugin.tabs.count==2 && plugin.web === web,"script tab preserves opener and returns to its original tab after login-style handoff")
+  try await web.evaluateJavaScript("(()=>{const f=document.createElement('form');f.method='POST';f.action='/post';f.target='_blank';f.innerHTML='<input name=message value=POST_TARGET_FIXTURE>';document.body.append(f);f.submit()})()")
+  for _ in 0..<200 { if let target=plugin.web, target !== web, (try? await target.evaluateJavaScript("document.querySelector('#posted')?.textContent==='POST_TARGET_FIXTURE'")) as? Bool == true { break };try await Task.sleep(nanoseconds:50_000_000) }
+  let posted=try await plugin.web!.evaluateJavaScript("document.querySelector('#posted')?.textContent==='POST_TARGET_FIXTURE'")
+  check(plugin.windows.isEmpty && plugin.tabs.count==3 && posted as? Bool == true,"new-window forms retain their POST body inside a main browser tab")
+  try await plugin.web!.evaluateJavaScript("window.close()")
+  for _ in 0..<100 { if plugin.tabs.count==2 { break };try await Task.sleep(nanoseconds:20_000_000) }
+  check(plugin.web === web,"closing a form-created tab returns to the source page")
   try await web.evaluateJavaScript("(()=>{const a=document.createElement('a');a.href='/two';a.target='_blank';document.body.append(a);a.click()})()")
-  for _ in 0..<200 { if let target=plugin.windows.first?.browser.web, (try? await target.evaluateJavaScript("document.querySelector('#two')!==null")) as? Bool == true { break };try await Task.sleep(nanoseconds:50_000_000) }
-  check(plugin.windows.first?.browser.web?.url?.path=="/two","target=_blank opens without replacing the current page")
-  plugin.windows.first!.close()
+  try await wait(web,"document.querySelector('#two')!==null")
+  check(plugin.windows.isEmpty && plugin.tabs.count==2 && plugin.web === web,"target=_blank follows the link in the current browser page")
+  web.goBack();try await wait(web,"document.querySelector('#account')!==null")
+  check(web.url?.path=="/account","back returns from a new-window link to its original page")
   for _ in 0..<6 {
    plugin.open(URL(string:base+"/offline")!)
    var failed=false
@@ -274,6 +308,8 @@ class ArticleFixture(BaseHTTPRequestHandler):
   body=self.rfile.read(int(self.headers.get('Content-Length','0')))
   if self.path=='/login' and b'user=fixture' in body and b'password=fixture-password' in body:
    self.send_response(303);self.send_header('Set-Cookie','f_login=fixture; HttpOnly; Path=/');self.send_header('Location','/account');self.end_headers()
+  elif self.path=='/post' and body==b'message=POST_TARGET_FIXTURE':
+   self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.end_headers();self.wfile.write(b'<h1 id="posted">POST_TARGET_FIXTURE</h1>')
   else: self.send_error(401)
  def do_GET(self):
   if self.path=='/offline':

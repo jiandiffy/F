@@ -4,6 +4,7 @@ import WebKit
 final class BrowserTab {
     let id = UUID().uuidString
     let web: WKWebView
+    weak var opener: BrowserTab?
     var snapshot: String?
     var snapshotURL: String?
     var requestedURL: URL?
