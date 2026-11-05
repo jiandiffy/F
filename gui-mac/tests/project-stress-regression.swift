@@ -49,7 +49,7 @@ extension ConversationView {
 extension WhiteboardView {
     var readyForStress: Bool { webReady }
     var documentForStress: URL? { sceneURL }
-    var inputForStress: GlassComposer { composer }
+    var inputForStress: GlassComposer { composer! }
     func evalForStress(_ script: String, _ done: @escaping (Any?) -> Void) {
         webView.evaluateJavaScript(script) { value, error in
             require(error == nil, "board JS: \(String(describing: error))")
@@ -171,7 +171,8 @@ func sameFolderConversationChecks(_ done: @escaping () -> Void) {
     for i in 0..<8 { a.composerForStress.typeForStress("AIOS-\(i)") }
     ui.openForStress(cwd) // Must create another view even while AIOS is still busy in the SAME folder.
     let b = ui.conversationView
-    require(a !== b && a.boardDirectory == b.boardDirectory && a.conversationDirectory != b.conversationDirectory, "same folder shares board but never merges conversation state")
+    require(a !== b && a.boardDirectory != b.boardDirectory && a.boardDirectory == a.conversationDirectory && b.boardDirectory == b.conversationDirectory,
+            "same folder conversations own separate boards and never merge conversation state")
     b.composerForStress.typeForStress("HOLD-agent")
     for i in 0..<8 { b.composerForStress.typeForStress("agent-\(i)") }
     wait("same folder agents", { a.sentForStress && b.sentForStress && a.sessionPath != nil && b.sessionPath != nil }) {
@@ -183,11 +184,12 @@ func sameFolderConversationChecks(_ done: @escaping () -> Void) {
         let save = { (view: ConversationView, marker: String) in
             let file = view.boardDirectory.appendingPathComponent("scene.json")
             var scene = try! JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
-            var rectangle = try! JSONSerialization.jsonObject(with: Data(contentsOf: BoardStore.sceneFile(for: projects[0]))) as! [String: Any]
-            var element = (rectangle["elements"] as! [[String: Any]])[0]
-            element["id"] = marker
-            rectangle.removeAll()
+            let element: [String: Any] = ["id": marker, "type": "rectangle", "x": 0, "y": 0, "width": 40, "height": 20,
+                "angle": 0, "strokeColor": "#111111", "backgroundColor": "transparent", "fillStyle": "solid", "strokeWidth": 1,
+                "strokeStyle": "solid", "roughness": 0, "opacity": 100, "version": 1, "versionNonce": 1,
+                "isDeleted": false, "groupIds": [], "seed": 1]
             scene["elements"] = (scene["elements"] as? [[String: Any]] ?? []) + [element]
+            scene["revision"] = (scene["revision"] as? Int ?? 0) + 1
             try! JSONSerialization.data(withJSONObject: scene).write(to: file, options: .atomic)
         }
         save(a, "aios-diagram"); save(b, "agent-diagram")
@@ -200,12 +202,12 @@ func sameFolderConversationChecks(_ done: @escaping () -> Void) {
         wait("AIOS document selected", { ui.boardForStress.documentForStress == a.boardDirectory.appendingPathComponent("scene.json") }) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 ui.boardForStress.evalForStress("window.FWB.getScene().map(e => e.id).sort().join(',')") { value in
-                    require(value as? String == "agent-diagram,aios-diagram", "AIOS conversation sees both project diagrams")
+                    require(value as? String == "aios-diagram", "AIOS conversation sees only its own diagram")
                     ui.openChatForStress(second)
                     ui.performApplicationCommand("whiteboard", command: "open")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                         ui.boardForStress.evalForStress("window.FWB.getScene().map(e => e.id).sort().join(',')") { value in
-                            require(value as? String == "agent-diagram,aios-diagram", "second conversation sees the same project diagrams")
+                            require(value as? String == "agent-diagram", "second conversation keeps its own diagram")
                             require(a.hasPendingWork && b.hasPendingWork, "200 history selections do not stop either agent")
                             a.finishForStress(); b.finishForStress()
                             wait("same folder queues drain", { !a.hasPendingWork && !b.hasPendingWork }) {
@@ -224,7 +226,7 @@ func sameFolderConversationChecks(_ done: @escaping () -> Void) {
                                 require(restored.boardForStress.inputForStress.draftText == "agent board draft", "agent board draft survives same-cwd restart")
                                 restored.shutdownPlugins()
                                 a.stopForStress(); b.stopForStress(); ui.shutdownPlugins()
-                                print("PASS: folder conversations share one board and keep separate sessions, concurrent queues, restart drafts through 200 switches")
+                                print("PASS: folder conversations keep separate boards and sessions, concurrent queues, restart drafts through 200 switches")
                                 done()
                             }
                         }
@@ -300,16 +302,15 @@ let logFile = URL(fileURLWithPath: ProcessInfo.processInfo.environment["F_QUEUE_
 let projects = (0..<6).map { root.appendingPathComponent("project-\($0)") }
 BoardStore.setRoot(root.appendingPathComponent("boards"))
 UserDefaults.standard.set(["ssh", "terminal"], forKey: PluginPreferences.disabledKey)
-for (i, project) in projects.enumerated() {
-    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-    let file = BoardStore.sceneFile(for: project)
-    try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let element: [String: Any] = ["id": "marker-\(i)", "type": "rectangle", "x": 0, "y": 0, "width": 80, "height": 40,
+func stressScene(_ index: Int, _ project: URL) -> [String: Any] {
+    let element: [String: Any] = ["id": "marker-\(index)", "type": "rectangle", "x": 0, "y": 0, "width": 80, "height": 40,
         "angle": 0, "strokeColor": "#111111", "backgroundColor": "transparent", "fillStyle": "solid", "strokeWidth": 1,
         "strokeStyle": "solid", "roughness": 0, "opacity": 100, "version": 1, "versionNonce": 1,
         "isDeleted": false, "groupIds": [], "seed": 1]
-    let scene: [String: Any] = ["type": "f-whiteboard", "elements": [element], "appState": [:], "files": [:], "project": project.path]
-    try JSONSerialization.data(withJSONObject: scene).write(to: file)
+    return ["type": "f-whiteboard", "elements": [element], "appState": [:], "files": [:], "project": project.path]
+}
+for project in projects {
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
 }
 historyChecks()
 folderHierarchyChecks()
@@ -321,7 +322,7 @@ for (i, project) in projects.enumerated() {
     host.openForStress(project)
     let destination = host.conversationView.boardDirectory.appendingPathComponent("scene.json")
     try! FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try! Data(contentsOf: BoardStore.sceneFile(for: project)).write(to: destination, options: .atomic)
+    try! JSONSerialization.data(withJSONObject: stressScene(i, project)).write(to: destination, options: .atomic)
     host.conversationView.composerForStress.typeForStress("HOLD-project-\(i)")
     for j in 0..<50 { host.conversationView.composerForStress.typeForStress("project-\(i)-prompt-\(j)") }
 }

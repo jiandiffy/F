@@ -111,6 +111,46 @@ test('pre-existing hidden index flags block validation in either worktree withou
   }
 });
 
+test('cancellation after the merged-result test preserves pending files without a success vertex', async t => {
+  const { project, folder, child, before } = await fixture(t);
+  const versions = (await project.status()).versions, controller = new AbortController(), run = project.run;
+  project.run = async (file, args, options) => {
+    const output = await run(file, args, options);
+    if (file === process.execPath && options.cwd === folder) controller.abort();
+    return output;
+  };
+  await assert.rejects(project.merge({ node: child.id, test: [process.execPath, '-e', "require('assert').equal(require('fs').readFileSync('src/code.txt','utf8'),'after')"], signal: controller.signal }), /cancelled/);
+  assert.equal(await project.git(['rev-parse', 'HEAD']), before);
+  assert.equal(await readFile(path.join(folder, 'src/code.txt'), 'utf8'), 'after');
+  assert.deepEqual((await project.status()).versions, versions);
+});
+
+test('child project contexts cannot select the root or a sibling as their assigned worktree', async t => {
+  const { project, child } = await fixture(t);
+  const scoped = new VersionProject(child.worktree, { dataRoot: project.dataRoot });
+  await assert.rejects(scoped.commit({ paths: ['src'], message: 'Wrong root' }), /own assigned/);
+  await assert.rejects(scoped.branch({ label: 'Escape root', paths: ['outside.txt'] }), /own assigned/);
+  await assert.rejects(scoped.complete({ paths: ['src'], test: [process.execPath, '-e', 'process.exit(0)'] }), /own assigned/);
+  await writeFile(path.join(child.worktree, 'src/code.txt'), 'owned');
+  await scoped.commit({ node: child.id, paths: ['src'], message: 'Owned child commit' });
+  assert.equal(await project.git(['show', 'HEAD:src/code.txt'], child.worktree), 'owned');
+});
+
+test('validation cannot mutate version consent metadata or Git config and then be marked passed', async t => {
+  for (const mode of ['metadata', 'config']) await t.test(mode, async t => {
+    const { project, folder, child, before } = await fixture(t);
+    const file = path.join(folder, '.git', mode === 'metadata' ? 'f-tree.json' : 'config');
+    const script = mode === 'metadata'
+      ? `const fs=require('fs'),file=${JSON.stringify(file)},state=JSON.parse(fs.readFileSync(file));state.tampered=true;fs.writeFileSync(file,JSON.stringify(state));`
+      : `require('child_process').execFileSync('git',['-C',${JSON.stringify(folder)},'config','f.testMutation','true'])`;
+    await assert.rejects(project.merge({ node: child.id, test: [process.execPath, '-e', script] }), /changed/);
+    assert.equal(await project.git(['rev-parse', 'HEAD']), before);
+    assert.equal((await project.status()).nodes.find(n => n.id === child.id).validation, undefined);
+    if (mode === 'metadata') assert.equal(JSON.parse(await readFile(file, 'utf8')).tampered, true);
+    else assert.equal(await project.git(['config', 'f.testMutation']), 'true');
+  });
+});
+
 test('explicit commit paths exclude every pre-staged sibling with Git pathspec metacharacters', async t => {
   const { project, folder } = await fixture(t);
   const names = ['literal[1].txt', 'literal*.txt', ':literal.txt', 'space name.txt', '中文.txt', '--flag.txt', 'line\nbreak.txt', '$(literal).txt'];

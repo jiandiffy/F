@@ -29,8 +29,8 @@ extension WhiteboardView {
 
     var readyForTest: Bool { webReady }
     var loadDiagnosticsForTest: String { "ready=\(webReady) loading=\(webView.isLoading) url=\(webView.url?.absoluteString ?? "nil") document=\(sceneURL?.path ?? "nil") pending=\(pendingScene != nil)" }
-    var inputHiddenForTest: Bool { composer.isHidden }
-    var composerForTest: GlassComposer { composer }
+    var inputHiddenForTest: Bool { composer?.isHidden ?? true }
+    var composerForTest: GlassComposer { composer! }
 
     func writeExternalSceneForTest(_ elements: [[String: Any]], reload: Bool) {
         var scene = try! JSONSerialization.jsonObject(with: Data(contentsOf: sceneURL!)) as! [String: Any]
@@ -44,13 +44,14 @@ extension WhiteboardView {
     func checkNativeInput() {
         var sent: [String] = []
         onPrompt = { sent.append($0) }
-        composer.canSend = false
-        composer.submitForTest("测试画板指令")
+        composer?.onSend = { [weak self] text in self?.onPrompt?(text) }
+        composer?.canSend = false
+        composer?.submitForTest("测试画板指令")
         precondition(sent.isEmpty, "Busy input sent a prompt")
-        composer.canSend = true
-        composer.submitForTest("测试画板指令")
+        composer?.canSend = true
+        composer?.submitForTest("测试画板指令")
         precondition(sent == ["测试画板指令"], "Native input did not forward the prompt")
-        precondition(composer.showsOptions, "Board input must show model and thinking choices")
+        precondition(composer?.showsOptions == true, "Board input must show model and thinking choices")
         onPrompt = nil
     }
 }
@@ -184,6 +185,9 @@ BoardStore.setRoot(testRoot.appendingPathComponent("boards"))
 let project = testRoot.appendingPathComponent("project-a")
 try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
 let board = WhiteboardView(project: project)
+let boardComposer = GlassComposer(frame: .zero)
+board.composer = boardComposer
+board.onComposerVisibility = { [weak board] hidden in board?.composer?.isHidden = hidden }
 board.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
 let window = NSWindow(contentRect: board.frame, styleMask: [.titled], backing: .buffered, defer: false)
 window.contentView = board

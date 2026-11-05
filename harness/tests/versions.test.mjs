@@ -17,7 +17,8 @@ test('enable creates own repository; scoped branches and tested merges form a re
   const env = await setup();
   try {
     const { project, folder } = env;
-    await assert.rejects(project.status(), /parent repositories/);
+    assert.deepEqual((await project.status()).versions, []);
+    assert.equal((await project.status()).enabled, false);
     const initial = await project.enable(); assert.equal(initial.nodes[0].id, 'root');
     assert.equal(await project.git(['rev-parse', '--show-toplevel']), await realpath(folder));
     await mkdir(path.join(folder, 'src')); await writeFile(path.join(folder, 'src/main.txt'), 'one');
@@ -97,6 +98,7 @@ test('an origin lookup failure cannot trigger repository creation', async () => 
   const env = await setup();
   try {
     await env.project.enable();
+    await env.project.complete({ paths: ['.'], test: [process.execPath, '-e', 'process.exit(0)'] });
     await env.project.git(['remote', 'add', 'origin', 'https://github.com/example/project.git']);
     let creations = 0;
     const project = new VersionProject(env.folder, { dataRoot: path.join(env.base, 'data'), runner: (file, args, options) => {

@@ -39,7 +39,7 @@ final class SettingsWindowController: NSObject {
     private var boardControls: [NSView] = []
     func refreshPluginVisibility() { boardControls.forEach { $0.isHidden = !PluginPreferences.isEnabled("whiteboard") } }
     private let boardPathLabel = NSTextField(labelWithString: "")
-    private let boardHint = NSTextField(labelWithString: "每个项目一块画板，默认存在 F 的软件数据目录。")
+    private let boardHint = NSTextField(labelWithString: "每条对话一块画板，默认存在 F 的软件数据目录。")
 
     private func build() {
         let height: CGFloat = 430

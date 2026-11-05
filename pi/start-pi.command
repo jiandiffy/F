@@ -1,3 +1,3 @@
 #!/bin/zsh
-cd /Users/fanfy/Desktop/fy
-exec /Users/fanfy/Desktop/fy/pi/bin/pi
+cd /Users/fanfy/Desktop/fy/F
+exec /Users/fanfy/Desktop/fy/F/pi/bin/pi

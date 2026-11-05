@@ -1,4 +1,4 @@
-import network from '/Users/fanfy/Desktop/fy/pi/scripts/network.cjs';
+import network from '/Users/fanfy/Desktop/fy/F/pi/scripts/network.cjs';
 import type { SettingSource } from "./index-types.js";
 import type { ModelOverrides } from "./models.js";
 import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
@@ -56,7 +56,7 @@ export function buildCodebuddyEnv(
 	provider?: Config["provider"],
 	base: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-	const env = { ...network.networkEnv("cbi", base), DISABLE_AUTO_COMPACT: "1", DISABLE_AUTOUPDATER: "1", CODEBUDDY_INTERNET_ENVIRONMENT: "public", ACC_PRODUCT_CONFIG_PATH: "/Users/fanfy/Desktop/fy/pi/codebuddy/cbi/product.json" };
+	const env = { ...network.networkEnv("cbi", base), DISABLE_AUTO_COMPACT: "1", DISABLE_AUTOUPDATER: "1", CODEBUDDY_INTERNET_ENVIRONMENT: "public", ACC_PRODUCT_CONFIG_PATH: "/Users/fanfy/Desktop/fy/F/pi/codebuddy/cbi/product.json" };
  delete (env as any).CODEBUDDY_API_KEY;
  delete (env as any).CODEBUDDY_BASE_URL;
 	const dir = resolveCodebuddyConfigDir(provider);
@@ -85,10 +85,10 @@ export function loadConfig(cwd: string): Config {
   askCodebuddy: { enabled: false },
   provider: {
    appendSystemPrompt: true, strictMcpConfig: true,
-   executable: '/Users/fanfy/Desktop/fy/pi/runtime/node/bin/node',
-   pathToCodebuddyCode: '/Users/fanfy/Desktop/fy/pi/node_modules/@tencent-ai/codebuddy-code/bin/codebuddy',
+   executable: '/Users/fanfy/Desktop/fy/F/pi/runtime/node/bin/node',
+   pathToCodebuddyCode: '/Users/fanfy/Desktop/fy/F/pi/node_modules/@tencent-ai/codebuddy-code/bin/codebuddy',
    isolatedEnv: true,
-   codebuddyConfigDir: '/Users/fanfy/Desktop/fy/pi/codebuddy/cbi',
+   codebuddyConfigDir: '/Users/fanfy/Desktop/fy/F/pi/codebuddy/cbi',
   }
  };
 }

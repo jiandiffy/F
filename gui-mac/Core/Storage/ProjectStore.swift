@@ -10,15 +10,37 @@ import WebKit
 enum ProjectStore {
     private static let key = "LastProjectDirectory"
     private static let foldersKey = "FProjectFolders"
+    private static let hiddenKey = "FHiddenProjectFolders"
+
+    static func isHidden(_ url: URL, defaults: UserDefaults = .standard) -> Bool {
+        (defaults.stringArray(forKey: hiddenKey) ?? []).contains(url.standardizedFileURL.path)
+    }
+
+    /// Only remove navigation; sessions, files and application data remain intact.
+    static func hide(_ url: URL, defaults: UserDefaults = .standard) {
+        let path = url.standardizedFileURL.path
+        var hidden = defaults.stringArray(forKey: hiddenKey) ?? []
+        if !hidden.contains(path) { hidden.append(path) }
+        defaults.set(hidden, forKey: hiddenKey)
+        defaults.set((defaults.stringArray(forKey: foldersKey) ?? []).filter { $0 != path }, forKey: foldersKey)
+        if defaults.string(forKey: key) == path { defaults.removeObject(forKey: key) }
+    }
+
+    /// Only explicit folder-open revives an entry; background callbacks and restore do not.
+    static func reopen(_ url: URL, defaults: UserDefaults = .standard) {
+        let path = url.standardizedFileURL.path
+        defaults.set((defaults.stringArray(forKey: hiddenKey) ?? []).filter { $0 != path }, forKey: hiddenKey)
+        remember(url, defaults: defaults)
+    }
 
     /// A project exists as soon as its folder is opened, before its first message.
-    static func folders(chats: [PiChat] = []) -> [URL] {
-        var paths = UserDefaults.standard.stringArray(forKey: foldersKey) ?? []
+    static func folders(chats: [PiChat] = [], defaults: UserDefaults = .standard) -> [URL] {
+        var paths = defaults.stringArray(forKey: foldersKey) ?? []
         paths += chats.compactMap(\.cwd).filter { !$0.isEmpty }
         var seen = Set<String>()
         return paths.compactMap { path in
             let url = URL(fileURLWithPath: path).standardizedFileURL
-            return seen.insert(url.path).inserted ? url : nil
+            return !isHidden(url, defaults: defaults) && seen.insert(url.path).inserted ? url : nil
         }
     }
 
@@ -32,20 +54,24 @@ enum ProjectStore {
     static func initial() -> URL {
         if let path = UserDefaults.standard.string(forKey: key),
            !path.isEmpty,
-           FileManager.default.fileExists(atPath: path) {
+           FileManager.default.fileExists(atPath: path),
+           !isHidden(URL(fileURLWithPath: path)) {
             return URL(fileURLWithPath: path)
         }
-        if let cwd = PiHistory.load().first?.cwd, !cwd.isEmpty {
+        if let cwd = PiHistory.load().first(where: { chat in
+            chat.cwd.map { !$0.isEmpty && !isHidden(URL(fileURLWithPath: $0)) } ?? false
+        })?.cwd {
             return URL(fileURLWithPath: cwd)
         }
         return FileManager.default.homeDirectoryForCurrentUser
     }
 
-    static func remember(_ url: URL) {
+    static func remember(_ url: URL, defaults: UserDefaults = .standard) {
+        guard !isHidden(url, defaults: defaults) else { return }
         let path = url.standardizedFileURL.path
-        UserDefaults.standard.set(path, forKey: key)
-        var paths = UserDefaults.standard.stringArray(forKey: foldersKey) ?? []
-        if !paths.contains(path) { paths.append(path); UserDefaults.standard.set(paths, forKey: foldersKey) }
+        defaults.set(path, forKey: key)
+        var paths = defaults.stringArray(forKey: foldersKey) ?? []
+        if !paths.contains(path) { paths.append(path); defaults.set(paths, forKey: foldersKey) }
     }
 }
 

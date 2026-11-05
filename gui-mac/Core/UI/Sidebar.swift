@@ -213,13 +213,14 @@ final class ChatListDocumentView: NSView {
             let row = AppRowView(title: ProjectStore.title(for: project), symbol: "folder")
             row.isSelected = selectedProject == project.path
             row.toolTip = project.path
+            row.onAdd = { [weak self] in self?.onNewConversation?(project) }
             row.onOpen = { [weak self] _ in
                 self?.selectedProject = project.path
                 self?.render()
                 self?.onOpenProject?(project)
             }
             let menu = NSMenu()
-            for (title, command) in [("新建对话", "new"), ("开启树状版本管理", "enable"), ("上传 GitHub", "publish")] {
+            for (title, command) in [("Rename…", "rename"), ("Delete", "delete")] {
                 let item = NSMenuItem(title: title, action: #selector(projectAction(_:)), keyEquivalent: "")
                 item.target = self; item.representedObject = ["project": project.path, "command": command]
                 menu.addItem(item)
@@ -240,9 +241,6 @@ final class ChatListDocumentView: NSView {
                 chatRow.onDelete = { [weak self] row in self?.delete(row) }
                 append(chatRow, inset: 25)
             }
-            let new = AppRowView(title: "新对话", symbol: "plus")
-            new.onOpen = { [weak self] _ in self?.onNewConversation?(project) }
-            append(new, inset: 25)
         }
         frame.size.height = max(1, CGFloat(items.count) * 32)
         needsLayout = true
@@ -253,8 +251,7 @@ final class ChatListDocumentView: NSView {
     @objc private func projectAction(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? [String: String], let path = value["project"], let command = value["command"] else { return }
         let project = URL(fileURLWithPath: path)
-        if command == "new" { onNewConversation?(project) }
-        else { onProjectCommand?(project, command) }
+        onProjectCommand?(project, command)
     }
     private func delete(_ row: ChatRowView) {
         NSWorkspace.shared.recycle([row.session.path]) { [weak self] _, error in
@@ -348,6 +345,8 @@ final class SidebarSectionHeaderView: NSView {
 
 final class AppRowView: NSView {
     var onOpen: ((AppRowView) -> Void)?
+    var onAdd: (() -> Void)? { didSet { addButton.isHidden = onAdd == nil; needsLayout = true } }
+    private let addButton = NSButton()
     var isSelected = false { didSet { applyStyle() } }
     private var hover = false
 
@@ -377,20 +376,31 @@ final class AppRowView: NSView {
         label.drawsBackground = false
         addSubview(label)
 
+        addButton.isBordered = false
+        addButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "新建对话")
+        addButton.contentTintColor = .secondaryLabelColor
+        addButton.toolTip = "在此项目新建对话"
+        addButton.target = self; addButton.action = #selector(addConversation)
+        addButton.isHidden = true
+        addSubview(addButton)
         toolTip = title
     }
+
+    @objc private func addConversation() { onAdd?() }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func layout() {
         super.layout()
+        addButton.frame = NSRect(x: max(0, bounds.width - 28), y: floor((bounds.height - 24) / 2), width: 24, height: 24)
         icon.frame = NSRect(x: 10, y: floor((bounds.height - 17) / 2), width: 17, height: 17)
-        label.frame = NSRect(x: 34, y: floor((bounds.height - 17) / 2), width: max(0, bounds.width - 44), height: 17)
+        label.frame = NSRect(x: 34, y: floor((bounds.height - 17) / 2), width: max(0, bounds.width - (onAdd == nil ? 44 : 66)), height: 17)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let superview else { return nil }
         let local = convert(point, from: superview)
+        if !addButton.isHidden, addButton.frame.contains(local) { return addButton }
         return bounds.contains(local) ? self : nil
     }
 

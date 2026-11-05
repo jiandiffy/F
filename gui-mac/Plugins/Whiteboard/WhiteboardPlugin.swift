@@ -68,7 +68,9 @@ final class WhiteboardSchemeHandler: NSObject, WKURLSchemeHandler {
 
 final class WhiteboardView: NSView, WKScriptMessageHandler {
     private let webView: WKWebView
-    private let composer = GlassComposer(frame: .zero)
+    /// 输入框由窗口提供，在所有应用界面里停在同一个位置。
+    weak var composer: GlassComposer?
+    var onComposerVisibility: ((Bool) -> Void)?
     private let schemeHandler: WhiteboardSchemeHandler
     private var projectURL: URL
     private var sceneURL: URL?
@@ -78,6 +80,10 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
     private var watchTimer: Timer?
     private var theme = "light"
     private var projectSwitchGeneration = 0
+    private var conversationID = ""
+    private var requestedProjectURL: URL
+    private var requestedConversationID: String?
+    private var viewGeneration = 0
     private struct PendingWrite {
         var object: [String: Any]
         let baseline: Data?
@@ -92,20 +98,26 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
     private var baselineOrder: [String] = []
     var hasPendingWrites: Bool { !pendingWrites.isEmpty }
 
-    private func storageDirectory(for project: URL) -> URL {
-        BoardStore.directory(for: project)
+    private func storageDirectory(for project: URL, conversation id: String) -> URL {
+        ConversationBoards.directory(project: project, id: id)
     }
 
     func setConversation(_ id: String?, project: URL) {
-        setProject(project)
+        setDocument(project, conversation: id)
     }
 
-    var draftText: String { get { composer.draftText } set { composer.draftText = newValue } }
+    var draftText: String {
+        get { composer?.draftText ?? "" }
+        set { composer?.draftText = newValue }
+    }
     var onPrompt: ((String) -> Void)?
     var onOpenConversation: (() -> Void)?
 
     init(project: URL) {
         projectURL = project
+        requestedProjectURL = project
+        // 尚未绑定对话时（单独打开画板或测试）使用项目稳定的占位画板，不混用其他对话。
+        conversationID = ConversationBoards.id(for: "project:" + project.standardizedFileURL.path)
         let resources = Bundle.main.resourceURL ?? Bundle.main.bundleURL
         let root = resources.appendingPathComponent("whiteboard", isDirectory: true)
         schemeHandler = WhiteboardSchemeHandler(root: root)
@@ -124,9 +136,6 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
         webView.setValue(false, forKey: "drawsBackground")
         webView.allowsBackForwardNavigationGestures = false
         addSubview(webView)
-        composer.onSend = { [weak self] text in self?.onPrompt?(text) }
-        composer.onSizeChange = { [weak self] in self?.needsLayout = true }
-        addSubview(composer)
 
         if FileManager.default.fileExists(atPath: root.path),
            let url = URL(string: "fwb://app/index.html") {
@@ -140,7 +149,7 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
             addSubview(label)
         }
 
-        loadProject(project, force: true)
+        loadProject(project)
 
         startWatching()
     }
@@ -166,7 +175,6 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
     override func layout() {
         super.layout()
         webView.frame = bounds
-        composer.frame = composer.layoutFrame(in: bounds)
         subviews.compactMap { $0 as? NSTextField }.forEach {
             $0.frame = bounds.insetBy(dx: 36, dy: 140)
         }
@@ -176,34 +184,48 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
         window?.makeFirstResponder(webView)
     }
 
-    /// Flush to the old document before loading the requested project.
+    /// Project notifications may follow bindConversation while its flush is pending.
+    /// Keep the bound conversation for this project; never rebind one that was already flushed.
     func setProject(_ url: URL) {
+        let sameProject = requestedProjectURL.standardizedFileURL.path == url.standardizedFileURL.path
+        setDocument(url, conversation: sameProject ? requestedConversationID : conversationID)
+    }
+
+    /// Flush the outgoing conversation even when both conversations share a project folder.
+    private func setDocument(_ url: URL, conversation id: String?) {
         let resolved = url.standardizedFileURL
+        let requestedID = id ?? ConversationBoards.id(for: "project:" + resolved.path)
+        requestedProjectURL = resolved
+        requestedConversationID = requestedID
         // Even A → B → A must invalidate B's still-pending flush callback.
         projectSwitchGeneration += 1
         let change = projectSwitchGeneration
-        guard projectURL.path != resolved.path || sceneURL != storageDirectory(for: resolved).appendingPathComponent("scene.json") else {
+        guard conversationID != requestedID || projectURL.path != resolved.path ||
+              sceneURL != storageDirectory(for: resolved, conversation: requestedID).appendingPathComponent("scene.json") else {
             webView.isHidden = false
-            composer.canSend = true
+            composer?.canSend = true
             return
         }
         webView.isHidden = true
-        composer.canSend = false
+        composer?.canSend = false
         flushCurrentScene { [weak self] in
             guard let self, self.projectSwitchGeneration == change else { return }
-            self.loadProject(resolved, force: true)
+            self.conversationID = requestedID
+            self.loadProject(resolved)
             self.webView.isHidden = false
-            self.composer.canSend = true
+            self.composer?.canSend = true
         }
     }
 
     func flushCurrentScene(_ completion: @escaping () -> Void) {
         guard webReady, let document = sceneURL else { completion(); return }
         let baseline = lastSceneData
+        let generation = viewGeneration
         webView.evaluateJavaScript("window.FWB.getDocumentSnapshot()") { [weak self] object, _ in
-            if let self, self.sceneURL == document, let snapshot = object as? [String: Any],
-               snapshot["documentID"] as? String == document.path,
+            if let self, self.viewGeneration == generation, self.sceneURL == document,
+               let snapshot = object as? [String: Any], self.matchesCurrentView(snapshot),
                let object = snapshot["scene"] as? [String: Any] {
+                self.persistViewport(snapshot["viewport"] as? [String: Any])
                 // An Agent may have written a new revision before the WebKit view reloaded it.
                 // Do not replace that newer file with an older in-memory scene.
                 self.persistScene(Self.jsonString(object), baseline: baseline,
@@ -214,9 +236,9 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
         }
     }
 
-    /// 设置里改了保存位置后，立即从新位置重新加载当前项目的画板。
+    /// 设置里改了保存位置后，立即从新位置重新加载当前对话的画板。
     func reloadFromStorage() {
-        setProject(projectURL)
+        setDocument(requestedProjectURL, conversation: requestedConversationID)
     }
 
     private func saveBoardImage(base64: String, suggestedName: String?, format: String) {
@@ -286,6 +308,7 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
     }
 
     func connectOptions(to conversation: ConversationView) {
+        guard let composer else { return }
         conversation.shareOptions(with: composer)
     }
 
@@ -299,7 +322,7 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
     }
 
     func clearStatus() {
-        composer.canSend = true
+        composer?.canSend = true
         jsCall("setStatus", "")
     }
 
@@ -308,32 +331,20 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
         jsCall("menuAction", action)
     }
 
-    private func loadProject(_ url: URL, force: Bool) {
+    private func loadProject(_ url: URL) {
         let resolved = url.standardizedFileURL
-        if !force, projectURL.path == resolved.path, sceneURL != nil { return }
         projectURL = resolved
+        viewGeneration += 1
 
-        // 画板统一存放在软件数据目录：<root>/<项目名>-<hash>/scene.json
+        // 每条对话一块画板，统一存在软件数据目录：<root>/<项目名>-<hash>/conversations/<对话>/scene.json
         BoardStore.migrateLegacyScene(for: resolved)
-        ConversationBoards.mergeIntoProject(project: resolved)
-        let directory = storageDirectory(for: resolved)
+        guard !conversationID.isEmpty else { return }
+        ConversationBoards.prepare(project: resolved, id: conversationID)
+        let directory = storageDirectory(for: resolved, conversation: conversationID)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let file = directory.appendingPathComponent("scene.json")
         if !FileManager.default.fileExists(atPath: file.path) {
-            let scene: [String: Any] = [
-                "type": "f-whiteboard",
-                "version": 1,
-                "revision": 0,
-                "project": resolved.path,
-                "updatedAt": Self.isoNow(),
-                "updatedBy": "system",
-                "elements": [],
-                "appState": [
-                    "viewBackgroundColor": "transparent",
-                    "currentItemFontFamily": 5,
-                ],
-                "files": [:],
-            ]
+            let scene = ConversationBoards.blankScene(project: resolved)
             do {
                 if let lock = try ProjectSceneWriter.acquireLock(for: file) {
                     defer { ProjectSceneWriter.releaseLock(lock) }
@@ -366,7 +377,7 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
     private func pollSceneFile() {
         guard let sceneURL, pendingWrites[sceneURL] == nil else { return }
         guard let data = try? Data(contentsOf: sceneURL) else {
-            if !FileManager.default.fileExists(atPath: sceneURL.path) { loadProject(projectURL, force: true) }
+            if !FileManager.default.fileExists(atPath: sceneURL.path) { loadProject(projectURL) }
             return
         }
         if let previous = lastSceneData, previous == data { return }
@@ -386,8 +397,43 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
         let baselineID = UUID().uuidString
         if let lastSceneData { sceneBaselines[baselineID] = lastSceneData; baselineOrder.append(baselineID) }
         if baselineOrder.count > 32 { sceneBaselines.removeValue(forKey: baselineOrder.removeFirst()) }
-        let options: [String: Any] = ["fit": fit, "documentID": sceneURL?.path ?? "", "baselineID": baselineID]
+        var options: [String: Any] = ["fit": fit, "documentID": sceneURL?.path ?? "", "baselineID": baselineID,
+            "conversationID": conversationID, "viewGeneration": viewGeneration]
+        if fit, let file = viewportURL, let data = try? Data(contentsOf: file),
+           let viewport = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+           Self.validViewport(viewport) { options["viewport"] = viewport }
         js("window.FWB.loadScene(\(Self.jsonString(scene)), \(Self.jsonString(options)))")
+    }
+
+    private var viewportURL: URL? {
+        conversationID.isEmpty ? nil
+            : ConversationBoards.directory(project: projectURL, id: conversationID).appendingPathComponent("viewport.json")
+    }
+
+    private static func validViewport(_ value: [String: Any]) -> Bool {
+        guard value["version"] as? Int == 1,
+              let x = value["centerX"] as? Double, x.isFinite,
+              let y = value["centerY"] as? Double, y.isFinite,
+              let zoom = value["zoom"] as? Double, zoom.isFinite, (0.1...30).contains(zoom) else { return false }
+        return true
+    }
+
+    private func matchesCurrentView(_ body: [String: Any]) -> Bool {
+        body["documentID"] as? String == sceneURL?.path &&
+            body["conversationID"] as? String == conversationID &&
+            body["viewGeneration"] as? Int == viewGeneration
+    }
+
+    private func persistViewport(_ viewport: [String: Any]?) {
+        guard let viewport, Self.validViewport(viewport), let file = viewportURL else { return }
+        do {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // Keep only this version's private fields; never put viewport data in scene.json.
+            let value = viewport.filter { ["version", "centerX", "centerY", "zoom"].contains($0.key) }
+            try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]).write(to: file, options: .atomic)
+        } catch {
+            setStatus("画板视角保存失败：\(error.localizedDescription)", busy: false)
+        }
     }
 
     private func updateContext() {
@@ -398,6 +444,7 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
             "projectName": name,
             "projectPath": abbreviatedPath(projectURL.path),
             "scenePath": sceneURL.map { abbreviatedPath($0.path) } ?? "",
+            "conversationID": conversationID,
         ]
         jsCall("setContext", payload)
     }
@@ -480,12 +527,6 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
         return text
     }
 
-    private static func isoNow() -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: Date())
-    }
-
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == "fwb", let body = message.body as? [String: Any] else { return }
         switch body["type"] as? String {
@@ -495,14 +536,16 @@ final class WhiteboardView: NSView, WKScriptMessageHandler {
             jsCall("setTheme", theme)
             updateContext()
             applyPendingScene(fit: true)
+        case "viewport":
+            if matchesCurrentView(body) { persistViewport(body["viewport"] as? [String: Any]) }
         case "change":
-            if let scene = body["scene"] as? String,
-               body["documentID"] as? String == sceneURL?.path {
+            if let scene = body["scene"] as? String, matchesCurrentView(body) {
+                persistViewport(body["viewport"] as? [String: Any])
                 persistScene(scene, baselineID: body["baselineID"] as? String,
                     reloadAfterSave: body["reloadAfterSave"] as? Bool == true)
             }
         case "modal":
-            composer.isHidden = body["open"] as? Bool == true
+            onComposerVisibility?(body["open"] as? Bool == true)
         case "prompt":
             if let text = body["text"] as? String, !text.isEmpty {
                 onPrompt?(text)

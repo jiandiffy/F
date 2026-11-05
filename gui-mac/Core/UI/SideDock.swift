@@ -8,6 +8,7 @@ final class DockProcess {
     let kind: String
     var name: String
     let plugin: FPlugin
+    var projectPath: String?
 
     var view: NSView { plugin.view }
 
@@ -264,6 +265,17 @@ final class BottomPluginHost: NSView {
     /// 进程请求宿主显示右侧辅助栏。
     var onRequestSidebar: ((String) -> Void)?
 
+    /// Never stop a PTY or unknown project-bound process just to permit a rename.
+    func blocksProjectMutation(_ root: URL) -> Bool {
+        processes.contains { process in
+            if let terminal = process.plugin as? TerminalPlugin,
+               terminal.terminal.isRunning, let directory = terminal.terminal.directory,
+               ProjectMutation.contains(directory.resolvingSymlinksInPath().path, in: root.path) { return true }
+            guard let path = process.projectPath, ProjectMutation.contains(path, in: root.path) else { return false }
+            return process.plugin.projectAssociation == .project
+        }
+    }
+
     var hasProcesses: Bool { !processes.isEmpty }
     /// 任一进程仍有未完成任务或队列时，更新重启必须继续等待。
     var hasPendingWork: Bool { processes.contains { ($0.plugin as? FProcessActivity)?.hasPendingWork == true } }
@@ -364,6 +376,7 @@ final class BottomPluginHost: NSView {
         }
         let base = (type as? FProcessProvider)?.processDefaultName ?? type.title
         let process = DockProcess(kind: kind, name: uniqueName(base), plugin: plugin)
+        process.projectPath = project.standardizedFileURL.path
         plugin.onRequestSidebar = { [weak self] in self?.onRequestSidebar?(kind) }
         if plugin.projectAssociation == .project { plugin.projectDidChange(project) }
         if let contextual = plugin as? FContextualProcess {
@@ -474,6 +487,7 @@ final class BottomPluginHost: NSView {
     func projectDidChange(_ project: URL) {
         self.project = project
         for process in processes where process.plugin.projectAssociation == .project {
+            process.projectPath = project.standardizedFileURL.path
             process.plugin.projectDidChange(project)
         }
     }

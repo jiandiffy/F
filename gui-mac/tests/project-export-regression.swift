@@ -27,6 +27,7 @@ extension ConversationView {
 
 extension WhiteboardView {
     var documentForTest: URL { sceneURL! }
+    var conversationForTest: String { conversationID }
 
     static func checkPDFExport() {
         let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -89,7 +90,7 @@ func projectExportChecks() {
                 precondition((saved["elements"] as! [[String: Any]]).first?["id"] as? String == "project-a-rectangle")
                 board.setProject(secondary)
                 assertEventually("window.FWB.getScene().length === 0", "project B opens its own board") {
-                    precondition(board.documentForTest == BoardStore.sceneFile(for: secondary))
+                    precondition(board.documentForTest == ConversationBoards.sceneFile(project: secondary, id: board.conversationForTest))
                     let firstLiteral = String(data: try! JSONSerialization.data(withJSONObject: first.path, options: [.fragmentsAllowed]), encoding: .utf8)!
                     board.evaluateForTest("window.webkit.messageHandlers.fwb.postMessage({type:'change',documentID:\(firstLiteral),scene:JSON.stringify({elements:[{id:'stale'}]})}); true") { _ in
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -144,42 +145,98 @@ private func checkRPCConfiguration(_ done: @escaping () -> Void) {
 }
 
 private func checkMigration() {
+    // 项目内的旧画板仍先迁到统一存储，已有内容优先。
     let legacyProject = testRoot.appendingPathComponent("legacy-project")
     let legacy = legacyProject.appendingPathComponent(".f/whiteboard/scene.json")
     try! FileManager.default.createDirectory(at: legacy.deletingLastPathComponent(), withIntermediateDirectories: true)
     try! Data("{\"elements\":[],\"legacy\":true}".utf8).write(to: legacy)
     precondition(BoardStore.migrateLegacyScene(for: legacyProject))
-    let target = BoardStore.sceneFile(for: legacyProject)
+    let central = BoardStore.sceneFile(for: legacyProject)
     let current = Data("{\"elements\":[],\"central\":true}".utf8)
-    try! current.write(to: target)
+    try! current.write(to: central)
     precondition(!BoardStore.migrateLegacyScene(for: legacyProject))
-    precondition(try! Data(contentsOf: target) == current)
-    let firstSession = legacyProject.appendingPathComponent("first.session").path
-    let id = ConversationBoards.id(for: firstSession)
-    let scoped = ConversationBoards.directory(project: legacyProject, id: id).appendingPathComponent("scene.json")
-    try! FileManager.default.createDirectory(at: scoped.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let archived: [String: Any] = ["elements": [
-        ["id": "shape", "type": "rectangle", "x": 10, "y": 20, "width": 100, "height": 60, "boundElements": [["id": "text", "type": "text"]]],
-        ["id": "text", "type": "text", "x": 10, "y": 20, "width": 100, "height": 30, "containerId": "shape"],
-        ["id": "image", "type": "image", "x": 130, "y": 20, "width": 100, "height": 100, "fileId": "photo"]
-    ], "files": ["photo": ["id": "photo", "dataURL": "data:image/png;base64,test"]]]
-    let original = try! JSONSerialization.data(withJSONObject: archived)
-    try! original.write(to: scoped)
-    ConversationBoards.migrateLegacy(project: legacyProject, session: firstSession, id: id)
-    let merged = try! Data(contentsOf: target)
-    let scene = try! JSONSerialization.jsonObject(with: merged) as! [String: Any]
-    let elements = scene["elements"] as! [[String: Any]]
-    let prefix = "legacy-" + id + "-"
-    precondition(scene["central"] as? Bool == true && elements.count == 3)
-    precondition(elements[1]["containerId"] as? String == prefix + "shape")
-    precondition(elements[2]["fileId"] as? String == prefix + "photo")
-    precondition((scene["files"] as! [String: Any])[prefix + "photo"] != nil)
-    precondition(try! Data(contentsOf: scoped) == original)
-    ConversationBoards.mergeIntoProject(project: legacyProject)
-    precondition(try! Data(contentsOf: target) == merged)
-    ConversationBoards.bind(session: firstSession, id: id)
-    precondition(ConversationBoards.id(for: firstSession) == id)
-    print("PASS: shared project migration preserves central data and archives, remaps bindings/images, and is idempotent")
+    precondition(try! Data(contentsOf: central) == current)
+
+    // 共享项目画板一次性分回每条对话。
+    let project = testRoot.appendingPathComponent("conversation-migration")
+    try! FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let ownerSession = testRoot.appendingPathComponent("owner.session").path
+    let legacySession = testRoot.appendingPathComponent("legacy.session").path
+    for session in [ownerSession, legacySession] {
+        try! Data("{}\n".utf8).write(to: URL(fileURLWithPath: session))
+    }
+    let ownerID = ConversationBoards.id(for: ownerSession)
+    let legacyID = ConversationBoards.id(for: legacySession)
+    ConversationBoards.bind(session: ownerSession, id: ownerID)
+    ConversationBoards.bind(session: legacySession, id: legacyID)
+    // 最近使用过画板的对话接收没有归属的图元。
+    let ownerViewport = ConversationBoards.directory(project: project, id: ownerID).appendingPathComponent("viewport.json")
+    try! FileManager.default.createDirectory(at: ownerViewport.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try! JSONSerialization.data(withJSONObject: ["version": 1, "centerX": 10, "centerY": 20, "zoom": 1]).write(to: ownerViewport)
+    let legacyScene = ConversationBoards.sceneFile(project: project, id: legacyID)
+    try! FileManager.default.createDirectory(at: legacyScene.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let existing: [String: Any] = ["elements": [["id": "keep-me", "type": "rectangle", "x": 0, "y": 0, "width": 10, "height": 10]], "files": [:], "revision": 1]
+    let originalLegacy = try! JSONSerialization.data(withJSONObject: existing)
+    try! originalLegacy.write(to: legacyScene)
+    let projectBoard = BoardStore.sceneFile(for: project)
+    try! FileManager.default.createDirectory(at: projectBoard.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let orphanID = "ffffffff-0000-0000-0000-000000000000"
+    let shared: [String: Any] = [
+        "type": "f-whiteboard", "version": 1, "revision": 7, "project": project.path,
+        "elements": [
+            ["id": "shared-shape", "type": "rectangle", "x": 0, "y": 0, "width": 20, "height": 20],
+            ["id": "legacy-\(legacyID)-keep-me", "type": "rectangle", "x": 40, "y": 0, "width": 10, "height": 10],
+            ["id": "legacy-\(orphanID)-orphan", "type": "rectangle", "x": 80, "y": 0, "width": 10, "height": 10],
+        ],
+        "files": ["legacy-\(legacyID)-photo": ["id": "legacy-\(legacyID)-photo", "dataURL": "data:image/png;base64,test"]],
+    ]
+    try! JSONSerialization.data(withJSONObject: shared).write(to: projectBoard)
+    ConversationBoards.prepare(project: project, id: ownerID)
+    let ownerScene = try! JSONSerialization.jsonObject(with: Data(contentsOf: ConversationBoards.sceneFile(project: project, id: ownerID))) as! [String: Any]
+    precondition((ownerScene["elements"] as! [[String: Any]]).compactMap { $0["id"] as? String } == ["shared-shape"],
+                 "unattributed elements go to the conversation that used the board last")
+    precondition(try! Data(contentsOf: legacyScene) == originalLegacy, "conversation boards are never duplicated")
+    precondition(!FileManager.default.fileExists(atPath: projectBoard.path), "shared project board is retired")
+    let retired = BoardStore.directory(for: project).appendingPathComponent("retired")
+    precondition((try! FileManager.default.contentsOfDirectory(atPath: retired.path)).count == 1, "retired scene kept for recovery")
+    precondition(FileManager.default.fileExists(atPath: BoardStore.directory(for: project).appendingPathComponent("conversation-board-migration.json").path))
+    ConversationBoards.prepare(project: project, id: ownerID)
+    precondition(try! Data(contentsOf: legacyScene) == originalLegacy, "migration runs once")
+
+    // 还没有自己画板的对话，从带前缀的共享元素恢复并修正引用。
+    let restoreSession = testRoot.appendingPathComponent("restore.session").path
+    try! Data("{}\n".utf8).write(to: URL(fileURLWithPath: restoreSession))
+    let restoreID = ConversationBoards.id(for: restoreSession)
+    ConversationBoards.bind(session: restoreSession, id: restoreID)
+    let restoreProject = testRoot.appendingPathComponent("restore-project")
+    try! FileManager.default.createDirectory(at: restoreProject, withIntermediateDirectories: true)
+    let restoreFile = BoardStore.sceneFile(for: restoreProject)
+    try! FileManager.default.createDirectory(at: restoreFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let prefix = "legacy-" + restoreID + "-"
+    let restoreScene: [String: Any] = ["type": "f-whiteboard", "revision": 3, "project": restoreProject.path, "elements": [
+        ["id": prefix + "frame", "type": "rectangle", "x": 0, "y": 0, "width": 200, "height": 120, "boundElements": [["id": prefix + "label", "type": "text"]]],
+        ["id": prefix + "label", "type": "text", "x": 4, "y": 4, "width": 80, "height": 20, "containerId": prefix + "frame", "groupIds": [prefix + "group"]],
+        ["id": prefix + "photo", "type": "image", "x": 220, "y": 0, "width": 40, "height": 40, "fileId": prefix + "asset"],
+    ], "files": [prefix + "asset": ["id": prefix + "asset", "dataURL": "data:image/png;base64,test"]]]
+    try! JSONSerialization.data(withJSONObject: restoreScene).write(to: restoreFile)
+    ConversationBoards.prepare(project: restoreProject, id: restoreID)
+    let restored = try! JSONSerialization.jsonObject(with: Data(contentsOf: ConversationBoards.sceneFile(project: restoreProject, id: restoreID))) as! [String: Any]
+    let restoredElements = restored["elements"] as! [[String: Any]]
+    precondition(restoredElements.compactMap { $0["id"] as? String } == ["frame", "label", "photo"], "prefixed elements return to their conversation")
+    precondition(restoredElements[1]["containerId"] as? String == "frame" && (restoredElements[1]["groupIds"] as! [String]) == ["group"], "bindings are remapped")
+    precondition((restoredElements[0]["boundElements"] as! [[String: Any]])[0]["id"] as? String == "label", "bound element ids are remapped")
+    precondition(restoredElements[2]["fileId"] as? String == "asset" && (restored["files"] as! [String: Any])["asset"] != nil, "image files follow the element")
+
+    // 找不到对应对话时只归档，不创建新画板。
+    let orphanProject = testRoot.appendingPathComponent("orphan-project")
+    try! FileManager.default.createDirectory(at: orphanProject, withIntermediateDirectories: true)
+    let orphanFile = BoardStore.sceneFile(for: orphanProject)
+    try! FileManager.default.createDirectory(at: orphanFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try! JSONSerialization.data(withJSONObject: ["type": "f-whiteboard", "elements": [["id": "lonely", "type": "rectangle", "x": 0, "y": 0, "width": 4, "height": 4]], "files": [:]]).write(to: orphanFile)
+    ConversationBoards.prepare(project: orphanProject, id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    precondition(!FileManager.default.fileExists(atPath: ConversationBoards.sceneFile(project: orphanProject, id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").path), "no conversation means no new board")
+    precondition(!FileManager.default.fileExists(atPath: orphanFile.path), "unmatched project board is removed from view")
+    print("PASS: shared project boards split back into conversation boards, remap bindings/images, archive leftovers and run once")
     checkConcurrentSceneWrites()
 }
 
@@ -273,8 +330,8 @@ func perProjectBoardChecks(_ done: @escaping () -> Void) {
     }
     let firstSession = testRoot.appendingPathComponent("aios.session").path
     let secondSession = testRoot.appendingPathComponent("agent.session").path
-    let firstFile = BoardStore.sceneFile(for: first)
-    let secondFile = BoardStore.sceneFile(for: second)
+    let firstFile = ConversationBoards.sceneFile(project: first, id: ConversationBoards.id(for: firstSession))
+    let secondFile = ConversationBoards.sceneFile(project: second, id: ConversationBoards.id(for: secondSession))
     precondition(firstFile != secondFile)
     writeProjectBoard(first, file: firstFile, marker: "marker-project-a")
     writeProjectBoard(second, file: secondFile, marker: "marker-project-b")
@@ -286,7 +343,7 @@ func perProjectBoardChecks(_ done: @escaping () -> Void) {
         host.shutdownPlugins()
         if let previous { defaults.set(previous, forKey: PluginPreferences.disabledKey) }
         else { defaults.removeObject(forKey: PluginPreferences.disabledKey) }
-        print("PASS: different project folders use separate shared documents")
+        print("PASS: each conversation keeps its own board inside the project folder")
         done()
     }
 

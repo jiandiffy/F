@@ -130,8 +130,21 @@ final class AgentOptionsBar: NSView {
 
 /// Enter 发送，Shift+Enter 换行（输入法组合中不触发发送）
 final class ComposerTextView: NSTextView {
+    // Each prompt editor owns its undo history, not the window's file editors
+    // or another project's composer.
+    private let inputUndoManager = UndoManager()
+    override var undoManager: UndoManager? { inputUndoManager }
     var onPlainReturn: (() -> Void)?
     var onHistory: ((Bool) -> Bool)?
+
+    // Secondary click must not open editing/lookup menus or change the selection.
+    // The native responder chain still owns Command-C/V/X/Z and text input.
+    override func menu(for event: NSEvent) -> NSMenu? { nil }
+    override func rightMouseDown(with event: NSEvent) {}
+    override func mouseDown(with event: NSEvent) {
+        guard !event.modifierFlags.contains(.control) else { return }
+        super.mouseDown(with: event)
+    }
 
     /// Only borrow arrows at the first/last visual line; ordinary multiline editing stays native.
     private func atHistoryBoundary(older: Bool) -> Bool {
@@ -173,7 +186,15 @@ final class GlassComposer: NSView, NSTextViewDelegate {
         }
     }
     var history: PromptHistory? {
-        didSet { historyIndex = nil; historyDraft = "" }
+        didSet {
+            historyIndex = nil; historyDraft = ""
+            if oldValue !== history {
+                // Rebinding a project/session preserves its displayed draft, but
+                // old editing actions must not cross that history boundary.
+                textView.breakUndoCoalescing()
+                textView.undoManager?.removeAllActions()
+            }
+        }
     }
     private var historyIndex: Int?
     private var historyDraft = ""
@@ -229,6 +250,7 @@ final class GlassComposer: NSView, NSTextViewDelegate {
         addSubview(queueView)
 
         textView.isRichText = false
+        textView.allowsUndo = true
         textView.drawsBackground = false
         textView.font = font
         textView.textColor = .labelColor
@@ -247,7 +269,6 @@ final class GlassComposer: NSView, NSTextViewDelegate {
         textView.isAutomaticTextReplacementEnabled = false
         textView.isContinuousSpellCheckingEnabled = false
         textView.delegate = self
-        textView.toolTip = "Enter 发送，Shift+Enter 换行；首行 ↑、末行 ↓ 浏览本项目输入历史"
         textView.onPlainReturn = { [weak self] in self?.submit() }
         textView.onHistory = { [weak self] older in self?.recallHistory(older: older) ?? false }
     }
@@ -360,7 +381,12 @@ final class GlassComposer: NSView, NSTextViewDelegate {
     }
 
     private func replaceInput(_ text: String) {
+        // Saved drafts, history recall, send and project changes replace the
+        // document without generating undoable user edits. Old ranges must not
+        // survive that replacement or they can restore another draft/crash.
+        textView.breakUndoCoalescing()
         textView.string = text
+        textView.undoManager?.removeAllActions()
         textView.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
         syncTextHeight()
         textView.scrollRangeToVisible(textView.selectedRange())

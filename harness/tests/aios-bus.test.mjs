@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { createKernel } from '../src/core/kernel.mjs';
@@ -93,4 +93,17 @@ test('file gates pin active edits and sandbox shell writes to the owned scope',a
  assert.equal(await readFile(path.join(directory,'owned.txt'),'utf8'),'allowed');
  await assert.rejects(readFile(path.join(directory,'other.txt')),/ENOENT/);
  await pi.emit('tool_execution_end',{toolCallId:'shell-1'},context);await resource.execute('',{action:'release',leaseId:scope.id},null,null,context);
+});
+
+test('missing branch assignment or corrupt workflow state blocks mutations instead of losing the guard',async t=>{
+ const {pi,ctx,context,directory}=await fixture(t),file=path.join(directory,'workflow.json');
+ await writeFile(file,JSON.stringify({version:2,goals:[],selected:null}));
+ const environment={F_WORKFLOW_STATE_FILE:file,F_WORKFLOW_ROLE:'experiment',F_AGENT_ID:'unassigned',F_WORKFLOW_CANDIDATE:'unknown'},saved=Object.fromEntries(Object.keys(environment).map(k=>[k,process.env[k]]));
+ try{
+  Object.assign(process.env,environment);
+  for(const toolName of ['write','edit','bash'])assert.ok((await pi.emit('tool_call',{toolName,input:{path:'source.txt',command:'true'}},context)).some(v=>v?.block&&/not assigned/.test(v.reason)));
+  for(const[k,v]of Object.entries(saved)){if(v===undefined)delete process.env[k];else process.env[k]=v;}
+  await writeFile(ctx.goalStates(context).file,'{invalid state');
+  assert.ok((await pi.emit('tool_call',{toolName:'write',input:{path:'source.txt'}},context)).some(v=>v?.block));
+ }finally{for(const[k,v]of Object.entries(saved)){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
 });

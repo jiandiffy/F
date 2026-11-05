@@ -36,22 +36,23 @@
 `BoardStore` 保持原来的路径与标识算法。每个远程项目由规范化的 SSH 端点（用户、
 HostName、端口）和远程绝对路径共同标识；别名指向同一端点时复用同一个项目。
 `RemoteProjects` 在 F 的应用数据目录保存项目描述，不复制远程项目文件。
-描述目录是历史会话的稳定 cwd，因此重新打开历史对话时能恢复远程主机、路径和同一块画板。
-画板仍统一存在 BoardStore 中，保存路径设置、切换前 flush、图片恢复和旧项目迁移均保留。
+描述目录是历史会话的稳定 cwd，因此重新打开历史对话时能恢复远程主机、路径和该对话的画板。
 
-每个项目一块画板：进入画板时以当前对话所在项目为准（`RootView.activeProjectURL`），
-先 flush 旧项目再加载新项目；A→B→A 的快速切换也会废弃 B 的过期回调。
+每条对话一块画板：`conversations/<boardID>/scene.json`。进入画板时以当前对话为准，
+先 flush 旧对话再加载新对话；A→B→A 的快速切换也会废弃 B 的过期回调。
 flush 同时校验 WebKit 返回的文档 id 和调用时的磁盘基线，避免读取中途换文档或
 覆盖 Agent 新写入的场景。前端按加载代次拒绝过期定时器，切换文档清理撤销历史和图片缓存；
 带旧文档 id 的 change 消息一律拒绝。
 
 项目现在是工作文件夹，左栏按文件夹分组。只有当前项目展开会话，文件夹没有折叠箭头。
-同项目的多个 ConversationView、RPC 进程、队列、模型和草稿仍彼此独立。
+同项目的多个 ConversationView、RPC 进程、队列、模型、草稿和画板仍彼此独立。
 
-项目画板使用 `BoardStore.sceneFile(for:)`，对话私有恢复记录保留在
-`ConversationBoards.directory(project:id:)`。迁移把旧会话图元、图片和绑定关系追加到项目画板，
-保留旧文件，并记录已迁移来源。GUI 与 Agent 写入共用项目租约事务锁，避免旧快照覆盖新图。
-`F_BOARD_DIR` 指向共享画板，`F_CONVERSATION_DIR` 指向独立恢复目录。
+对话画板文件为 `ConversationBoards.sceneFile(project:id:)`，视角、论文选择和中断记录
+在同一目录。旧共享项目画板只迁移一次：`legacy-<boardID>-` 前缀的图元回到原对话并
+去掉前缀、修正绑定与图片引用；其余图元归最近使用画板的对话；找不到对应对话时把旧文件
+移入 `retired/`，界面不再显示。迁移记录在 `conversation-board-migration.json`，
+原项目画板文件保留在磁盘上。GUI 与 Agent 写入共用对话租约事务锁，避免旧快照覆盖新图。
+`F_BOARD_DIR` 与 `F_CONVERSATION_DIR` 都指向这条对话的目录。
 
 `PromptHistory` 在 F 的偏好设置中按对话保存最近 200 条输入（总文本上限 1 MB，超大单条
 不进历史但仍照常发送）。对话和画板共享历史；首行 ↑/末行 ↓ 浏览，回到最新位置恢复草稿，
@@ -68,13 +69,20 @@ flush 同时校验 WebKit 返回的文档 id 和调用时的磁盘基线，避�
 `RootView` 的 `NSDraggingDestination` 接收（只接受真实存在的文件夹，文件、链接和其他拖放
 内容保持原行为），Dock 拖放由 `AppDelegate.application(_:open:)` 接收，两者共用
 `RootView.openDroppedFolder`。新对话和已有对话一样拥有独立 boardID、Agent 和输入
-队列，使用同项目画板，不会因为 cwd 相同而复用其他对话。
+队列，以及自己的画板，不会因为 cwd 相同而复用其他对话。
 
-左侧文件夹列表立即登记，已有会话从 pi 历史加载，未发送首条消息的会话也可显示。`Info.plist` 声明 `public.folder`（Alternate）让 Dock 图标
+文件夹列表立即登记，已有会话从 pi 历史加载，未发送首条消息的会话也可显示。`Info.plist` 声明 `public.folder`（Alternate）让 Dock 图标
 可以接收文件夹，不改变 Finder 的默认打开方式。
 
-## SSH 登录与底栏停靠区
+## 窗口级对话框与折叠对话
 
+主对话以外的应用界面（画板、版本、浏览器、Daily Paper、Gmail）共用窗口右下角的
+`AgentOverlayDock`：输入框始终停在同一个位置，宽度与主对话一致，模型与思考程度可切换，发送的指令进入
+当前对话的同一条队列；在画板里发送时仍附带白板工具提示。输入框上方是一个可开合的框，
+折叠时只有一行箭头，不写文字：向上表示展开，向下表示折叠。展开后对话内容和同一个箭头
+都在这个框里；点主页面收回一行。回到主对话时隐藏该框，改用对话自己的输入框。
+
+## SSH 登录与底栏停靠区
 底部栏固定白色，始终停在窗口底部。没有进程时展开显示已启用功能的单色选择图标；选择后
 图标消失，同一块白色面板左侧是一列纵向进程标签，右侧是当前进程页面，高度始终占满面板。
 再次收起并展开时，只要还有进程就直接显示标签和页面，不再显示选择页。
@@ -108,7 +116,7 @@ master。第一个普通登录面板可以沿用认证终端以保留原有 shel
 ## Side Agent
 
 side agent 是停靠区里的独立 pi 进程，与主对话分开运行。每次请求都会重新读取主对话最新的
-文字记录（`ConversationView.recentTranscript`）作为上下文，并使用当前项目共享的
+文字记录（`ConversationView.recentTranscript`）作为上下文，并使用当前对话的
 `F_BOARD_DIR`，因此可以分析主对话、执行命令、读写项目文件或修改同一块画板。切换项目时
 停止旧进程，下一条消息在新项目中重新开始。收起底栏不会停止任务；退出应用时统一释放。
 
@@ -125,7 +133,7 @@ side agent 实现 `FProcessActivity`：只要它仍在执行请求或还有排�
 
 远程工具使用 pi 的正式工具工厂保留参数、diff、图片读取及输出截断行为；远程 shell
 支持 AbortSignal 和超时，取消时结束对应的远程进程组或子进程树。白板工具继续操作本地
-集中存储的真实 Excalidraw 元素。GUI 与当前对话的 Agent 使用同一个项目共享画板目录；远程项目描述只标识执行环境。
+集中存储的真实 Excalidraw 元素。GUI 与当前对话的 Agent 使用同一条对话的画板目录；远程项目描述只标识执行环境。
 
 右侧浏览器保留 2 MB 以内 UTF-8 文本的原子保存与冲突检查；Agent 工具支持更大的文件。
 连接由系统 OpenSSH 解析 Host/Match、Include、密钥和 ProxyJump，使用私有控制套接字并

@@ -65,9 +65,95 @@ extension TerminalView {
 }
 
 extension RootView {
+    func checkBrowserPanelAnimationForTest(_ done: @escaping () -> Void) {
+        showApplication("browser")
+        leftOpen = false; rightOpen = false; bottomOpen = false; layout()
+        let states = [(true,false), (true,true), (false,true), (false,false)]
+        func step(_ index: Int) {
+            guard index < states.count else { done(); return }
+            (leftOpen, rightOpen) = states[index]
+            animateLayout()
+            var samples = 0
+            var timer: Timer?
+            timer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in
+                self.layoutSubtreeIfNeeded()
+                let toolbar = self.plugins.plugin("browser")!.toolbarView!
+                expect(toolbar.frame.minX >= max(0, self.leftPanel.frame.maxX) - 0.5, "toolbar avoids the left sidebar throughout its animation")
+                expect(toolbar.frame.maxX <= min(self.bounds.width, self.rightPanel.frame.minX) + 0.5, "toolbar avoids the right sidebar throughout its animation")
+                samples += 1
+                if self.animatingCount == 0 {
+                    timer?.invalidate(); timer = nil
+                    expect(samples >= 3, "sidebar animation is sampled before completion")
+                    step(index + 1)
+                }
+            }
+        }
+        step(0)
+    }
+    func checkNativeWorkspaceChromeForTest() {
+        let saved = frame, wasLeft = leftOpen, wasRight = rightOpen, wasBottom = bottomOpen
+        defer { frame = saved; leftOpen = wasLeft; rightOpen = wasRight; bottomOpen = wasBottom; layout() }
+        showApplication("browser")
+        for width in [CGFloat(520), CGFloat(900)] {
+            for (left, right) in [(false,false), (true,false), (false,true), (true,true)] {
+                frame.size = NSSize(width: width, height: 600)
+                leftOpen = left; rightOpen = right; bottomOpen = false; layout()
+                let controlsBottom = min(bottomButton.frame.minY, rightButton.frame.minY)
+                for id in ["gmail", "daily-paper"] {
+                    let application = plugins.plugin(id)!.view
+                    expect(application.frame.maxY <= controlsBottom - 8, "\(id) content stays clear of F host controls")
+                }
+                let browser = plugins.plugin("browser") as! BrowserPlugin
+                browser.view.layout()
+                let toolbar = browser.toolbarView!
+                toolbar.layout()
+                let field = toolbar.subviews.compactMap { $0 as? NSTextField }.first { $0.isEditable }!
+                expect(browser.view.frame == conversationFrame(), "browser page stays in the workspace")
+                expect(toolbar.superview === self && toolbar.frame.minX >= browser.view.frame.minX && toolbar.frame.maxX <= browser.view.frame.maxX, "browser toolbar stays between the expanded sidebars")
+                expect(field.placeholderString?.isEmpty != false, "search field has no placeholder")
+                expect(!field.isHidden, "narrow windows keep room for navigation and search with both sidebars open")
+                if !field.isHidden {
+                    let rect = convert(field.frame, from: toolbar)
+                    expect(abs(rect.midY - bottomButton.frame.midY) < 1, "search aligns with sidebar and bottom buttons")
+                    expect(rect.minX >= addButton.frame.maxX + 8 && rect.maxX <= bottomButton.frame.minX - 8, "search never covers host buttons with either sidebar open")
+                    expect(abs(rect.maxX - (min(browser.view.frame.maxX, bottomButton.frame.minX) - 20)) < 1, "search fills the available row up to the sidebar or software buttons")
+                    let back = toolbar.subviews.first { $0.identifier?.rawValue == "back" }!
+                    expect(abs(convert(back.frame, from: toolbar).minX - (max(browser.view.frame.minX, addButton.frame.maxX) + 8)) < 1, "navigation begins after the sidebar or software buttons with one inset")
+                    for item in toolbar.subviews {
+                        let itemRect = convert(item.frame, from: toolbar)
+                        expect(!left || !itemRect.intersects(leftPanel.frame), "browser control never overlaps the open left sidebar")
+                        expect(!right || !itemRect.intersects(rightPanel.frame), "browser control never overlaps the open right sidebar")
+                        expect(!itemRect.intersects(addButton.frame) && !itemRect.intersects(bottomButton.frame), "browser control never overlaps software buttons")
+                    }
+                    expect(field.toolTip == nil && toolbar.toolTip == nil, "browser input has no hover shortcut hint")
+                }
+                expect(whiteboardView.frame == conversationFrame(), "whiteboard keeps its existing web chrome insets")
+            }
+        }
+        showApplication("browser")
+        expect(plugins.plugin("browser")!.toolbarView?.isHidden == false, "browser toolbar is visible only with its workspace")
+        showConversation(nil)
+        expect(plugins.plugin("browser")!.toolbarView?.isHidden == true, "browser toolbar hides when returning to chat")
+    }
     func resumeFixtureDrafts() {
         conversationView.setUpdateFixture()
         whiteboardView.draftText = "board draft"
+    }
+    /// 输入框悬停不应出现快捷键提示：合成器里任何控件的 tooltip 都不能讲按键。
+    func checkComposerHasNoShortcutHints() {
+        let composer = GlassComposer(frame: NSRect(x: 0, y: 0, width: 700, height: 80))
+        composer.layoutSubtreeIfNeeded()
+        var hints: [String] = []
+        var textViews = 0
+        func walk(_ view: NSView) {
+            if view is NSTextView { textViews += 1 }
+            if let tip = view.toolTip { hints.append(tip) }
+            view.subviews.forEach(walk)
+        }
+        walk(composer)
+        expect(textViews >= 1, "composer keeps its text input")
+        expect(hints.allSatisfy { hint in !["Enter", "↩", "⌘", "Cmd", "Shift"].contains { hint.contains($0) } },
+               "composer never shows a shortcut hint on hover")
     }
     func checkUpdateAnnouncement(_ notice: String, _ done: @escaping () -> Void) {
         conversationView.updateAnnouncementForTest(notice, done)
@@ -218,12 +304,24 @@ final class FixtureApplication: FPlugin {
     func projectDidChange(_ project: URL) { receivedProject = true }
     func performMenuCommand(_ command: String) { performed = command }
 }
+extension AgentOverlayDock {
+    var headerForTest: OverlayPanelHeader { header }
+    var panelForTest: NSView { panel }
+    var scrollForTest: NSScrollView { scrollView }
+}
+extension OverlayPanelHeader {
+    var isExpandedForTest: Bool { expanded }
+    var hasTextForTest: Bool { subviews.contains { $0 is NSTextField } }
+}
 extension RootView {
     func refreshPluginsForTest() { refreshPluginState() }
     func projectForTest(_ project: URL) { setProject(project) }
     var visibleAppForTest: String? { if case .application(let id) = mode { return id }; return nil }
     var appRowsForTest: [String] { leftSidebar.idsForTest }
     var boardForTest: WhiteboardView { whiteboardView }
+    var overlayForTest: AgentOverlayDock { overlayDock }
+    func showApplicationForTest(_ id: String) { showApplication(id) }
+    func showConversationForTest() { showConversation(nil) }
     func toggleBottomForTest() { toggleBottom() }
     func newChatForTest() { newChat() }
     func applyFramesForTest() { applyFrames() }
@@ -237,8 +335,7 @@ extension SSHPanelView {
     var shellTerminalForTest: TerminalView? { shellTerminal }
     var terminalHostForTest: NSView { terminalHost }
 }
-extension SideAgentView {
-    var pageTextForTest: String { transcript.string }
+extension SideAgentView {    var pageTextForTest: String { transcript.string }
     func setPendingWorkForTest(busy: Bool) {
         self.busy = busy
     }
@@ -334,29 +431,67 @@ func folderDropChecks(_ done: @escaping () -> Void) {
     print("PASS: folder drop immediately adds a project; its first message adds an indented conversation")
     done()
 }
-func pluginToggleChecks() {
-    let defaults = UserDefaults.standard
+func browserAnimationChecks(_ done: @escaping () -> Void) {
+    let host = RootView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
+    let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false; window.contentView = host; window.orderFront(nil)
+    host.checkBrowserPanelAnimationForTest {
+        host.shutdownPlugins(); window.close()
+        print("PASS: browser toolbar stays clear of both sidebars throughout open and close animations")
+        done()
+    }
+}
+func pluginToggleChecks() {    let defaults = UserDefaults.standard
     let previous = defaults.object(forKey: PluginPreferences.disabledKey)
     defaults.set(["ssh"], forKey: PluginPreferences.disabledKey)
     ProjectStore.remember(root)
     let rootView = RootView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
+    rootView.checkNativeWorkspaceChromeForTest()
+    rootView.checkComposerHasNoShortcutHints()
+    // 窗口级对话框：应用界面里始终可见，折叠成一行箭头，回到主对话时隐藏。
+    rootView.showApplicationForTest("whiteboard")
+    rootView.layoutSubtreeIfNeeded()
+    let dock = rootView.overlayForTest
+    expect(!dock.isHidden && !dock.isExpanded, "workspace keeps the shared composer collapsed")
+    expect(dock.composer.showsOptions, "floating composer keeps model and thinking choices")
+    dock.layoutSubtreeIfNeeded()
+    expect(dock.composer.frame.width == min(640, rootView.bounds.width - 96),
+           "floating composer keeps the shared width")
+    expect(dock.panelForTest.frame.minY > dock.composer.frame.maxY, "the foldable box sits above the composer")
+    expect(dock.panelForTest.frame.height == AgentOverlayDock.headerHeight, "collapsed box is one row tall")
+    expect(!dock.headerForTest.hasTextForTest, "collapsed row shows only the arrow, no text")
+    expect(!dock.headerForTest.isExpandedForTest && dock.scrollForTest.isHidden,
+           "collapsed row shows the expand arrow")
+    dock.toggleExpanded()
+    expect(dock.isExpanded, "clicking the arrow opens the conversation")
+    dock.layoutSubtreeIfNeeded()
+    expect(dock.panelForTest.frame.height > AgentOverlayDock.headerHeight, "expanded box grows for messages")
+    expect(dock.headerForTest.isExpandedForTest, "expanded box shows the collapse arrow")
+    expect(dock.headerForTest.superview === dock.panelForTest && dock.scrollForTest.superview === dock.panelForTest,
+           "arrow and conversation share one box")
+    expect(!dock.scrollForTest.isHidden && dock.headerForTest.frame.maxY <= dock.panelForTest.bounds.height,
+           "conversation sits under the arrow inside the box")
+    rootView.showConversationForTest()
+    expect(dock.isHidden && !dock.isExpanded, "returning to the conversation hides and collapses the floating dock")
+    rootView.showApplicationForTest("whiteboard")
+    expect(!dock.isHidden, "application workspace shows the composer again")
     let menus = AppDelegate()
     rootView.onPluginsChanged = { menus.menusForTest(rootView) }
     menus.menusForTest(rootView)
-    expect(Set(menus.appMenuTitlesForTest) == ["画板", "版本"] && Set(menus.checkedPluginsForTest) == ["whiteboard", "terminal", "side-agent", "skills", "subagent", "workflow", "files", "versions", "aios", "datasets"], "application menus and checked plugin states")
+    expect(Set(menus.appMenuTitlesForTest) == ["画板", "版本", "Daily Paper", "Gmail", "浏览器"] && Set(menus.checkedPluginsForTest) == ["whiteboard", "terminal", "side-agent", "skills", "subagent", "workflow", "files", "versions", "aios", "datasets", "daily-paper", "gmail", "browser"], "application menus and checked plugin states")
     rootView.plugins.setEnabled("whiteboard", false)
-    expect(!rootView.appRowsForTest.contains("whiteboard") && menus.appMenuTitlesForTest == ["版本"] && rootView.visibleAppForTest == nil, "disabled board disappears from application list, menus and workspace")
+    expect(!rootView.appRowsForTest.contains("whiteboard") && Set(menus.appMenuTitlesForTest) == ["版本", "Daily Paper", "Gmail", "浏览器"] && rootView.visibleAppForTest == nil, "disabled board disappears from application list, menus and workspace")
     expect(!rootView.boardForTest.watchingForPluginTest, "disabled board stops polling")
     let next = root.appendingPathComponent("after-disabled-project")
     try! FileManager.default.createDirectory(at: next, withIntermediateDirectories: true)
-    let file = BoardStore.sceneFile(for: next)
+    let file = ConversationBoards.sceneFile(project: next, id: rootView.conversationView.boardID!)
     try! FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
     let data = Data("{\"elements\":[],\"files\":{},\"type\":\"f-whiteboard\"}".utf8)
     try! data.write(to: file)
     rootView.projectForTest(next)
     rootView.plugins.setEnabled("whiteboard", true)
-    expect(rootView.boardForTest.sceneForPluginTest == file && rootView.boardForTest.watchingForPluginTest, "re-enabled board binds to the latest project and resumes polling")
-    expect((try! Data(contentsOf: file)) == data, "plugin toggle must preserve centralized board data")
+    expect(rootView.boardForTest.sceneForPluginTest == file && rootView.boardForTest.watchingForPluginTest, "re-enabled board binds to the latest project conversation board and resumes polling")
+    expect((try! Data(contentsOf: file)) == data, "plugin toggle must preserve conversation board data")
     let fresh = PluginRegistry()
     expect(!fresh.isEnabled("ssh") && fresh.isEnabled("whiteboard"), "plugin state survives creating a fresh registry")
     let application = FixtureApplication()
@@ -534,7 +669,8 @@ func configAndLifecycle() {
     expect(contextView.pageTextForTest == "% ", "stopping an idle side agent keeps the single prompt")
 
     let builtins = BuiltInPlugins.make(project: root)
-    expect(builtins.plugins.map(\.id) == ["whiteboard", "terminal", "ssh", "side-agent", "files", "versions", "aios", "datasets", "skills", "subagent", "workflow"], "built-in module registration")
+    expect(builtins.plugins.map(\.id) == ["whiteboard", "terminal", "ssh", "side-agent", "files", "versions", "browser", "daily-paper", "gmail", "aios", "datasets", "skills", "subagent", "workflow"], "built-in module registration")
+    expect(builtins.plugin("gmail")?.projectAssociation == .independent && builtins.plugin("gmail")?.placement == .workspace, "Gmail has an independent mailbox workspace")
     expect(builtins.plugin("ssh")?.sidebarView is RemoteBrowserView, "SSH sidebar is provided through plugin contract")
     expect((builtins.plugin("side-agent") as? FProcessProvider)?.processDefaultName == "side agent", "side agent exposes its default process name")
     builtins.shutdown()
@@ -845,6 +981,6 @@ BoardStore.setRoot(root.appendingPathComponent("boards"))
 let remoteTerminal = TerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 200))
 let browser = RemoteBrowserView(frame: NSRect(x: 0, y: 0, width: 300, height: 500))
 var transport: SSHTransport!
-TerminalView.checkClearSequences { updateResumeChecks { folderDropChecks { configAndLifecycle(); localTerminal() } } }
+TerminalView.checkClearSequences { updateResumeChecks { folderDropChecks { browserAnimationChecks { configAndLifecycle(); localTerminal() } } } }
 DispatchQueue.main.asyncAfter(deadline: .now() + 100) { fputs("FAIL: plugin suite timed out\n", stderr); exit(1) }
 app.run()
