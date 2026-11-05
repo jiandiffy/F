@@ -1,0 +1,12 @@
+{
+  "name": "@f/shell",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "shell",
+    "entries": {
+      "desktop": "packages/shell/desktop",
+      "host": "runtime/pi/node_modules/@earendil-works/pi-coding-agent"
+    }
+  }
+}

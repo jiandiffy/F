@@ -3,7 +3,7 @@ name: f-orchestrator
 description: 在 F 中按阶段目标树组织复杂任务，监督三个独立实验方向、一次孙级拆分、独立精简测试与用户候选选择。
 ---
 
-工具接口以 `../../gui-mac/PLUGIN_SPEC.md` 第10节为准。简单任务仍由主 Agent 执行，代码交付使用既有 delivered、simplify、test；自然语言交付加载并应用 unslop。
+工具接口以 `../../ui/desktop/PLUGIN_SPEC.md` 第10节为准。简单任务仍由主 Agent 执行，代码交付使用既有 delivered、simplify、test；自然语言交付加载并应用 unslop。
 
 ## 复杂任务
 

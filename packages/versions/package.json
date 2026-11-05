@@ -1,0 +1,12 @@
+{
+  "name": "@f/versions",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "versions",
+    "entries": {
+      "agent": "packages/versions/agent",
+      "desktop": "packages/versions/desktop"
+    }
+  }
+}

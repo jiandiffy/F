@@ -1,0 +1,11 @@
+{
+  "name": "@f/browser-use",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "browser-use",
+    "entries": {
+      "agent": "packages/browser-use/agent"
+    }
+  }
+}

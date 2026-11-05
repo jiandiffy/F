@@ -1,0 +1,11 @@
+{
+  "name": "@f/data-base",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "data-base",
+    "entries": {
+      "agent": "packages/data-base/agent"
+    }
+  }
+}

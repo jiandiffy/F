@@ -1,0 +1,11 @@
+{
+  "name": "@f/ssh",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "ssh",
+    "entries": {
+      "desktop": "packages/ssh/desktop"
+    }
+  }
+}

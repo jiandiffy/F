@@ -1,0 +1,6 @@
+{
+  "provider": "cbi",
+  "adapter": "runtime/pi/vendor/pi-codebuddy-sdk-cbi/src/index.ts",
+  "credentials": "runtime/pi/codebuddy/cbi",
+  "secretStorage": "existing-local-only"
+}

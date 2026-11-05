@@ -17,7 +17,7 @@
 
 不得删除或覆盖 `~/Library/Application Support/F/boards`、项目描述、对话历史、模型凭据、
 SSH config、插件开关和用户自定义的画板保存位置。画板目录以 BoardStore 实际配置为准。
-扩展应用遵循 `gui-mac/PLUGIN_SPEC.md`，整体架构见 `gui-mac/ARCHITECTURE.md`。
+扩展应用遵循 `ui/desktop/PLUGIN_SPEC.md`，整体架构见 `ui/desktop/ARCHITECTURE.md`。
 
 ## 1. 开始前
 
@@ -40,7 +40,7 @@ SSH config、插件开关和用户自定义的画板保存位置。画板目录�
 ## 并行维护与主线发布
 
 - 本机源码会话在 `maintenance_scope claim` 中明确声明文件或目录范围（`paths` 相对源码根目录，
-  不支持 glob）。不同插件的不相交范围可并行；`gui-mac/Plugins/<插件>` 内即使声明不同文件，
+  不支持 glob）。不同插件的不相交范围可并行；`ui/desktop/Plugins/<插件>` 内即使声明不同文件，
   同插件仍互斥；公共源码或父子目录相交时也互斥。获得租约后必须重新 read 最新源码，禁止用
   拿锁前的整文件缓存覆盖前一持有者修改。write/edit 的实际工具调用必须持有授权，旧会话
   无需预先迁移，但无租约的修改会被拒绝；本机硬链接文件的写入保守拒绝。
@@ -52,10 +52,10 @@ SSH config、插件开关和用户自定义的画板保存位置。画板目录�
   write/edit 检查；测试输出放临时目录。macOS `sandbox-exec` 不可用时，只保留简单
   pwd/ls/wc/stat 只读命令，任意脚本执行失败关闭。其他自定义工具及同一系统用户直接启动的外部进程
   不属于本机制的安全边界，不能把租约视为操作系统级多用户隔离。
-- 主线发布使用单独一条 `python3 gui-mac/scripts/prepare-update.py --announcement '公告'`
+- 主线发布使用单独一条 `python3 ui/desktop/scripts/prepare-update.py --announcement '公告'`
   （可在末尾加 `--no-whiteboard`）。该精确命令不套只读沙箱，发布进程先取得全程进程锁，
   确认没有其他会话租约或执行中的编辑，再冻结工具层源码编辑；有冲突明确失败，不强拆租约。
-  隔离构建仍可写 harness/dist、gui-mac/.build、Resources 等生成输出。
+  隔离构建仍可写 runtime/harness/dist、ui/desktop/.build、Resources 等生成输出。
 - 发布锁覆盖构建、全部验证及 pending 提交；重复发布进程明确失败，请稍后重试。
   验证期间源码 digest 变化必须拒绝发布，不清理共享构建输出；已有 pending 或提交时出现另一
   pending 均不可覆盖。签名制品不变；源码/生成输出仍不得由未受保护的旧会话或外部进程并发修改。
@@ -65,7 +65,7 @@ SSH config、插件开关和用户自定义的画板保存位置。画板目录�
 完成源码修改后执行：
 
 ```sh
-python3 gui-mac/scripts/prepare-update.py --announcement '这里写100字以内的中文更新公告'
+python3 ui/desktop/scripts/prepare-update.py --announcement '这里写100字以内的中文更新公告'
 ```
 
 仅修改 Swift、脚本或终端资源且未改画板前端时，可加 `--no-whiteboard`。
@@ -108,7 +108,7 @@ F 内置 Agent 提交成功后，在主对话回复与 announcement 一致的 **
 ## Cordis 与技能
 
 维护任务使用 skills/f-maintenance/SKILL.md，应用插件修改使用 skills/f-plugins/SKILL.md。
-两者引用本指南和 gui-mac/PLUGIN_SPEC.md，不复制另一套规则。
-Agent 唯一组合入口为 pi/agent/extensions/fy-harness.ts；源码地图见 harness/README.md。
+两者引用本指南和 ui/desktop/PLUGIN_SPEC.md，不复制另一套规则。
+Agent 唯一组合入口为 runtime/pi/agent/extensions/fy-harness.ts；源码地图见 runtime/harness/README.md。
 每次更新将 Harness 与捆绑依赖冻结在签名资源内，并保存逐套件日志及真实模型测试记录。
 子代理只能回传修改和测试结果，不能替父对话发布应用更新。

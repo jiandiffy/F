@@ -3,18 +3,18 @@ name: f-workflow-plugins
 description: 为 F 修改阶段实验工作流或 Agent 工具插件，规定目标树、素材、固定版本、候选审核、模型约束和可逆 Cordis 接入。原生 UI 插件使用 f-plugins。
 ---
 
-先读 `../../gui-mac/PLUGIN_SPEC.md` 第8至10节。修改 F 自身同时使用 f-maintenance；文案和报告应用 unslop。已有能力修改原实现，缺少时才新增，不另建一套编排器。
+先读 `../../ui/desktop/PLUGIN_SPEC.md` 第8至10节。修改 F 自身同时使用 f-maintenance；文案和报告应用 unslop。已有能力修改原实现，缺少时才新增，不另建一套编排器。
 
 | 内容 | 位置 |
 | --- | --- |
-| 阶段、分支与审核运行时 | `harness/src/workflow/`，通过 Cordis Service、inject 和 effect 管理 |
-| 持久目标树与用户选择 | `harness/src/aios/state.mjs`，只从真实用户 input 跨越用户审批门 |
-| 原始版本、固定起点、候选和私有发布 | `harness/src/versions/workflow.mjs` |
-| 子代理模型、深度和继承 | `harness/src/subagent/`，由运行时强制约束 |
+| 阶段、分支与审核运行时 | `workflows/engine/`，通过 Cordis Service、inject 和 effect 管理 |
+| 持久目标树与用户选择 | `packages/agent-bus/agent/state.mjs`，只从真实用户 input 跨越用户审批门 |
+| 原始版本、固定起点、候选和私有发布 | `packages/versions/agent/workflow.mjs` |
+| 子代理模型、深度和继承 | `packages/side-agent/agent/`，由运行时强制约束 |
 | 可复用任务规范与素材模板 | `skills/<name>/SKILL.md`，模板放 assets，领域说明放 references |
 | 项目本地热更新工具 | `.f/plugins/<id>/v1.mjs`，沿用第9节哈希与验收契约 |
-| 内置工具与注册 | `harness/src/<domain>/` 和 `harness/src/index.mjs` |
-| 回归和输入夹具 | `harness/tests/`，输出、临时仓库与测试 datasets 放临时目录 |
+| 内置工具与注册 | `runtime/harness/src/<domain>/` 和 `runtime/harness/src/index.mjs` |
+| 回归和输入夹具 | `runtime/harness/tests/`，输出、临时仓库与测试 datasets 放临时目录 |
 
 准备真实输入、目标、允许修改路径、验收方法和素材来源。目标树包含唯一 id、title、objective 和可选 children，根的 children 按顺序对应阶段。工具用 plan 接收 tree，不再接收 JavaScript script、parallel 或 pipeline 函数体。
 

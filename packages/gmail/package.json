@@ -1,0 +1,12 @@
+{
+  "name": "@f/gmail",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "gmail",
+    "entries": {
+      "agent": "packages/gmail/agent",
+      "desktop": "packages/gmail/desktop"
+    }
+  }
+}

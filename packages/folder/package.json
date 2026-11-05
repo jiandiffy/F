@@ -1,0 +1,12 @@
+{
+  "name": "@f/folder",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "folder",
+    "entries": {
+      "desktop": "packages/folder/desktop",
+      "host": "runtime/pi/node_modules/@earendil-works/pi-coding-agent"
+    }
+  }
+}

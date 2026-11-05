@@ -1,0 +1,12 @@
+{
+  "name": "@f/computer-use",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "computer-use",
+    "entries": {
+      "agent": "packages/computer-use/agent",
+      "desktop": "packages/computer-use/desktop"
+    }
+  }
+}

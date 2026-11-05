@@ -1,0 +1,6 @@
+{
+  "provider": "dp",
+  "adapter": "runtime/pi/agent/modules/sources.ts",
+  "credentials": "runtime/pi/agent/auth.json",
+  "secretStorage": "existing-local-only"
+}
