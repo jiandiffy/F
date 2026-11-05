@@ -1,9 +1,4 @@
 import AppKit
-import AVKit
-import PDFKit
-import QuickLookUI
-import UniformTypeIdentifiers
-import WebKit
 
 // MARK: - 顶部浮动按钮占位
 
@@ -14,6 +9,21 @@ enum FChrome {
     /// 12（边距）+ 32（左栏）+ 8 + 32（+）+ 8 = 92。
     /// 内容左右各让出这么多，就不会再钻到按钮下面；高度不变。
     static let corner: CGFloat = 92
+
+    /// Native applications sit below the host's existing floating controls.
+    /// Their content stays transparent so the window supplies the chat backdrop.
+    static let toolbarHeight: CGFloat = 52
+    static func nativeWorkspaceFrame(in workspace: NSRect) -> NSRect {
+        NSRect(x: workspace.minX, y: workspace.minY, width: workspace.width,
+               height: max(0, workspace.height - toolbarHeight))
+    }
+
+    static func makeTransparent(_ scroll: NSScrollView) {
+        scroll.drawsBackground = false
+        scroll.contentView.drawsBackground = false
+        scroll.borderType = .noBorder
+        scroll.autohidesScrollers = true
+    }
 
     /// 把占位宽度告诉 web 视图（对话 / 白板共用同一个 CSS 变量）。
     static var cssInjection: String {

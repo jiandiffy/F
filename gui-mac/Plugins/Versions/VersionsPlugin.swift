@@ -1,186 +1,170 @@
 import AppKit
 
-/// The native surface and Agent tools use the same Git implementation and metadata.
-/// Nothing is uploaded merely by opening this view.
+/// Native entry is the sole opt-in boundary. Constructing/mounting/switching projects
+/// does not even start a subprocess; the global plugin preference is not repository consent.
 final class VersionsPlugin: NSObject, FPlugin, FProcessActivity {
+    typealias Executor = ([String: Any], URL, @escaping ([String: Any]) -> Void) -> Void
     let id = "versions"
     let title = "版本"
     let symbol = "point.3.connected.trianglepath.dotted"
     let placement = PluginPlacement.workspace
     let projectAssociation = PluginProjectAssociation.project
     let view = NSView()
-    private let text = NSTextView()
+    private let graph = VersionGraphView()
+    private let inspector = VersionInspectorView(frame: .zero)
     private let status = NSTextField(labelWithString: "")
     private var project: URL
     private var enabled = true
+    private var activationRequested = false
     private var generation = UUID()
     private var running = false
     private var deferredRequest: [String: Any]?
+    private let executor: Executor
     private(set) var hasPendingWork = false
 
-    init(project: URL) {
-        self.project = project
+    init(project: URL, executor: Executor? = nil) {
+        self.project = project; self.executor = executor ?? Self.execute
         super.init()
-        let controls = NSStackView()
-        controls.orientation = .horizontal; controls.spacing = 16
-        for (name, action) in [("开启", #selector(enable)), ("分支", #selector(branch)), ("提交", #selector(commit)),
-                               ("合并", #selector(merge)), ("GitHub", #selector(publish)), ("刷新", #selector(refresh))] {
-            let button = NSButton(title: name, target: self, action: action)
-            button.isBordered = false; button.font = .systemFont(ofSize: 12); controls.addArrangedSubview(button)
+        let scroll = VersionGraphScrollView(); scroll.drawsBackground = false; scroll.borderType = .noBorder
+        scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true
+        scroll.autohidesScrollers = true; scroll.documentView = graph
+        graph.setAccessibilityLabel("横向版本图，每个圆点固定一个提交，曲线连接真实父版本")
+        graph.onSelect = { [weak self] node in
+            guard let self, self.enabled else { return }
+            self.inspector.load(node: node, project: self.project)
         }
-        text.isEditable = false; text.isRichText = false; text.drawsBackground = false
-        text.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        text.textContainerInset = NSSize(width: 0, height: 8)
-        text.autoresizingMask = [.width]; text.isVerticallyResizable = true
-        text.textContainer?.widthTracksTextView = true
-        let scroll = NSScrollView(); scroll.drawsBackground = false; scroll.borderType = .noBorder
-        scroll.hasVerticalScroller = true; scroll.documentView = text
-        status.font = .systemFont(ofSize: 12); status.textColor = .secondaryLabelColor
+        status.font = .systemFont(ofSize: 11); status.textColor = .secondaryLabelColor
         status.lineBreakMode = .byTruncatingMiddle
-        for child in [controls, status, scroll] { child.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(child) }
+        status.stringValue = "点击「版本」后自动记录此项目的版本"
+        for child in [status, scroll, inspector] { child.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(child) }
+        let minimum = scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 160); minimum.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            controls.topAnchor.constraint(equalTo: view.topAnchor, constant: 20), controls.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            status.topAnchor.constraint(equalTo: controls.bottomAnchor, constant: 14), status.leadingAnchor.constraint(equalTo: controls.leadingAnchor),
+            status.topAnchor.constraint(equalTo: view.topAnchor, constant: 18), status.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             status.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            scroll.topAnchor.constraint(equalTo: status.bottomAnchor, constant: 8), scroll.leadingAnchor.constraint(equalTo: controls.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24), scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20)
+            scroll.topAnchor.constraint(equalTo: status.bottomAnchor, constant: 12), scroll.leadingAnchor.constraint(equalTo: status.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: status.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: inspector.topAnchor, constant: -12), minimum,
+            inspector.leadingAnchor.constraint(equalTo: status.leadingAnchor), inspector.trailingAnchor.constraint(equalTo: status.trailingAnchor),
+            inspector.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20)
         ])
     }
 
     var menuCommands: [PluginMenuCommand] {
-        [.init(title: "打开", id: "open"), .init(title: "开启树状版本管理", id: "enable"),
-         .init(title: "创建任务分支…", id: "branch"), .init(title: "提交文件…", id: "commit"),
-         .init(title: "测试并合并…", id: "merge"), .init(title: "上传 GitHub…", id: "publish")]
+        [.init(title: "打开", id: "open"), .init(title: "发布所选大版本到 GitHub…", id: "publish")]
     }
     func performMenuCommand(_ id: String) {
         guard enabled else { return }
-        switch id {
-        case "enable": enable()
-        case "branch": branch()
-        case "commit": commit()
-        case "merge": merge()
-        case "publish": publish()
-        default: refresh()
+        if id == "publish" { publish() }
+        // Host routes `open` through activate; unknown/retired commands never mutate.
+    }
+    func setEnabled(_ enabled: Bool) {
+        self.enabled = enabled
+        if !enabled {
+            generation = UUID(); deferredRequest = nil; activationRequested = false
+            graph.display([]); inspector.reset()
         }
     }
-    func setEnabled(_ enabled: Bool) { self.enabled = enabled; if enabled { refresh() } }
-    func activate() { refresh() }
+    func shutdown() { setEnabled(false) }
+    func activate() {
+        guard enabled else { return }
+        activationRequested = true
+        run(["action": "status"])
+    }
     func projectDidChange(_ project: URL) {
-        self.project = project; generation = UUID(); text.string = ""; status.stringValue = project.lastPathComponent
-        if enabled { refresh() }
+        guard self.project.standardizedFileURL != project.standardizedFileURL else { return }
+        self.project = project; generation = UUID(); deferredRequest = nil; activationRequested = false
+        graph.display([]); inspector.reset(); status.stringValue = project.lastPathComponent
     }
     func applyAppearance(dark: Bool) {
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        text.textColor = .labelColor
+        graph.needsDisplay = true; graph.subviews.forEach { $0.needsDisplay = true }
     }
     func confirmClose(_ completion: @escaping (Bool) -> Void) {
         if hasPendingWork { status.stringValue = "请等待当前版本操作结束"; completion(false) }
         else { completion(true) }
     }
 
-    @objc private func enable() { run(["action": "enable"]) }
-    @objc private func refresh() { if !running { run(["action": "status"], quiet: true) } }
-
-    private func ask(_ title: String, fields: [(String, String)], submit: String = "继续") -> [String]? {
-        guard !hasPendingWork else { return nil }
-        let alert = NSAlert(); alert.messageText = title
-        alert.addButton(withTitle: submit); alert.addButton(withTitle: "取消")
-        let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 6
-        var inputs: [NSTextField] = []
-        for (label, initial) in fields {
-            let caption = NSTextField(labelWithString: label); caption.font = .systemFont(ofSize: 11); caption.textColor = .secondaryLabelColor
-            let input = NSTextField(string: initial); input.translatesAutoresizingMaskIntoConstraints = false
-            input.widthAnchor.constraint(equalToConstant: 360).isActive = true
-            stack.addArrangedSubview(caption); stack.addArrangedSubview(input); inputs.append(input)
+    private func publish() {
+        guard !hasPendingWork, let selected = graph.selectedNode,
+              selected["kind"] as? String == "major" || selected["major"] as? Bool == true,
+              let version = selected["id"] as? String,
+              let commit = selected["commit"] as? String ?? selected["head"] as? String,
+              VersionGitReader.isObjectID(commit) else {
+            status.stringValue = "请先选择一个已完成的大版本，再从应用菜单发布"; return
         }
-        stack.frame = NSRect(x: 0, y: 0, width: 360, height: fields.count * 54)
-        alert.accessoryView = stack
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-        return inputs.map { $0.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) }
-    }
-    @objc private func branch() {
-        guard let input = ask("创建任务分支", fields: [("名称", ""), ("父版本 ID", "root"), ("文件范围（逗号分隔）", "")]) else { return }
-        run(["action": "branch", "label": input[0], "parent": input[1], "paths": splitPaths(input[2])])
-    }
-    @objc private func commit() {
-        guard let input = ask("提交负责的文件", fields: [("版本 ID", "root"), ("提交说明", ""), ("文件范围（逗号分隔）", "")]) else { return }
-        run(["action": "commit", "node": input[0], "message": input[1], "paths": splitPaths(input[2])])
-    }
-    @objc private func merge() {
-        guard let input = ask("测试并合并至父版本", fields: [("子版本 ID", ""), ("测试命令（JSON 参数数组）", "[\"npm\",\"test\"]")]) else { return }
-        guard let data = input[1].data(using: .utf8), let args = try? JSONSerialization.jsonObject(with: data) as? [String] else {
-            status.stringValue = "测试命令需为 JSON 字符串数组"; return
-        }
-        run(["action": "merge", "node": input[0], "test": args])
-    }
-    @objc private func publish() {
-        guard let input = ask("上传已提交版本到 GitHub", fields: [("版本 ID", "root"), ("首次上传：owner/repository（创建私有仓库）", "")], submit: "上传") else { return }
-        run(["action": "publish", "node": input[0], "repository": input[1], "authorized": true])
-    }
-    private func splitPaths(_ text: String) -> [String] {
-        text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let token = generation
+        let alert = NSAlert(); alert.messageText = "发布所选大版本到 GitHub"
+        alert.informativeText = "仅上传固定提交 \(commit.prefix(12))。需要已有 GitHub 授权；不会上传未提交的工作区。"
+        alert.addButton(withTitle: "授权并发布"); alert.addButton(withTitle: "取消")
+        let repository = NSTextField(string: "")
+        repository.placeholderString = "owner/repository（已有远程可留空）"
+        repository.frame = NSRect(x: 0, y: 0, width: 360, height: 24); alert.accessoryView = repository
+        guard alert.runModal() == .alertFirstButtonReturn, generation == token, enabled else { return }
+        run(["action": "publish", "version": version, "repository": repository.stringValue.trimmingCharacters(in: .whitespacesAndNewlines), "authorized": true])
     }
 
-    private func run(_ values: [String: Any], quiet: Bool = false) {
+    private func run(_ values: [String: Any]) {
         guard enabled else { return }
-        if running {
-            if !quiet && !hasPendingWork { deferredRequest = values }
-            return
-        }
+        if running { deferredRequest = values; return }
         guard RemoteProjects.load(project) == nil else { status.stringValue = "远程项目请在 SSH 终端中管理 Git"; return }
-        guard let cli = PiPaths.cliPath else { status.stringValue = "找不到 Agent 运行时"; return }
+        let token = generation, folder = project, action = values["action"] as? String ?? ""
+        var request = values; request["project"] = folder.path
+        running = true; hasPendingWork = action != "status"; status.stringValue = "正在读取版本…"
+        executor(request, folder) { [weak self] output in
+            // Always defer to the main loop, including in-process adapters.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.running = false; self.hasPendingWork = false
+                if self.generation == token, self.enabled {
+                    if output["ok"] as? Bool == true {
+                        if let state = output["value"] as? [String: Any], state["nodes"] != nil || state["versions"] != nil {
+                            if state["enabled"] as? Bool == false {
+                                self.graph.display([]); self.inspector.reset()
+                                if self.activationRequested {
+                                    self.activationRequested = false
+                                    self.deferredRequest = ["action": "enable", "authorized": true]
+                                }
+                            } else {
+                                self.activationRequested = false
+                                // An explicitly empty versions array must stay empty. Only old
+                                // backends without this key use their legacy branch/history nodes.
+                                let nodes = state["versions"] as? [[String: Any]] ?? state["nodes"] as? [[String: Any]] ?? []
+                                self.graph.display(nodes); self.graph.selectCurrent()
+                                self.status.stringValue = nodes.isEmpty ? "等待 Agent 完成首次更新，版本将显示在这里" : folder.lastPathComponent
+                                self.status.toolTip = folder.path
+                            }
+                        } else if action == "publish" { self.status.stringValue = "所选大版本已发布到 GitHub" }
+                        else { self.deferredRequest = ["action": "status"] }
+                    } else {
+                        self.activationRequested = false
+                        self.status.stringValue = output["error"] as? String ?? "版本操作失败"
+                        self.status.toolTip = self.status.stringValue
+                    }
+                }
+                if let deferred = self.deferredRequest, self.enabled {
+                    self.deferredRequest = nil; self.run(deferred)
+                }
+            }
+        }
+    }
+
+    private static func execute(_ request: [String: Any], project: URL, completion: @escaping ([String: Any]) -> Void) {
+        guard let cli = PiPaths.cliPath else { completion(["ok": false, "error": "找不到 Agent 运行时"]); return }
         let source = URL(fileURLWithPath: cli).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let bundled = Bundle.main.resourceURL?.appendingPathComponent("harness/src/versions/cli.mjs")
         let script = bundled.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil } ?? source.appendingPathComponent("harness/src/versions/cli.mjs")
         let node = source.appendingPathComponent("pi/runtime/node/bin/node")
-        let token = generation, folder = project
-        var request = values; request["project"] = folder.path
-        guard let input = try? JSONSerialization.data(withJSONObject: request) else { return }
-        running = true; hasPendingWork = !quiet; status.stringValue = "处理中…"
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        guard let input = try? JSONSerialization.data(withJSONObject: request) else { completion(["ok": false, "error": "无效版本请求"]); return }
+        DispatchQueue.global(qos: .userInitiated).async {
             let process = Process(), pipe = Pipe(), stdin = Pipe()
             process.executableURL = node; process.arguments = [script.path]
-            process.currentDirectoryURL = folder; process.standardInput = stdin
+            process.currentDirectoryURL = project; process.standardInput = stdin
             process.standardOutput = pipe; process.standardError = pipe
-            var output: [String: Any]
             do {
                 try process.run(); stdin.fileHandleForWriting.write(input); try stdin.fileHandleForWriting.close()
                 let data = pipe.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
-                output = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? ["ok": false, "error": "无法读取版本结果"]
-            } catch { output = ["ok": false, "error": error.localizedDescription] }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.running = false; self.hasPendingWork = false
-                if let deferred = self.deferredRequest {
-                    self.deferredRequest = nil
-                    if self.generation == token { self.run(deferred); return }
-                }
-                guard self.generation == token, self.enabled else { if self.enabled { self.refresh() }; return }
-                if output["ok"] as? Bool == true {
-                    if let state = output["value"] as? [String: Any], let nodes = state["nodes"] as? [[String: Any]] {
-                        self.render(nodes); self.status.stringValue = folder.lastPathComponent
-                    } else { self.status.stringValue = "已完成"; self.refresh() }
-                } else {
-                    let error = output["error"] as? String ?? "版本操作失败"
-                    self.status.stringValue = quiet && (error.contains("not a git repository") || error.contains("parent repositories")) ? "此文件夹尚未开启版本管理" : error
-                    if !quiet { self.text.string = output["error"] as? String ?? "" }
-                }
-            }
+                let output = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? ["ok": false, "error": "无法读取版本结果"]
+                completion(output)
+            } catch { completion(["ok": false, "error": error.localizedDescription]) }
         }
-    }
-
-    private func render(_ nodes: [[String: Any]]) {
-        var lines: [String] = []
-        func append(_ parent: String?, _ depth: Int) {
-            for node in nodes where (node["parent"] as? String) == parent {
-                let id = node["id"] as? String ?? "", indent = String(repeating: "    ", count: depth)
-                lines.append(indent + (node["label"] as? String ?? id) + "  ·  " + (node["branch"] as? String ?? ""))
-                lines.append(indent + "ID  " + id)
-                if let worktree = node["worktree"] as? String { lines.append(indent + worktree) }
-                if let changes = node["changes"] as? String, !changes.isEmpty { lines.append(indent + changes.replacingOccurrences(of: "\n", with: "\n" + indent)) }
-                lines.append(""); append(id, depth + 1)
-            }
-        }
-        append(nil, 0); text.string = lines.joined(separator: "\n")
     }
 }

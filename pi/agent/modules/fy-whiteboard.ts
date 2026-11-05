@@ -1,8 +1,8 @@
 /**
  * F Whiteboard bridge.
  *
- * The F desktop app stores one editable Excalidraw scene per project at:
- *   F_BOARD_DIR/scene.json (the GUI's centralized, project-bound storage).
+ * The F desktop app stores one editable Excalidraw scene per conversation at:
+ *   F_BOARD_DIR/scene.json (the GUI's centralized, conversation-bound storage).
  * Standalone CLI sessions without F_BOARD_DIR use <project>/.f/whiteboard/scene.json.
  *
  * These tools are the agent-side control surface. They only create and mutate

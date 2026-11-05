@@ -7,11 +7,21 @@ bash gui-mac/build.sh --app=/tmp/F-regression.app
 python3 gui-mac/tests/run-whiteboard-tests.py
 python3 gui-mac/tests/run-queue-tests.py
 python3 gui-mac/tests/run-plugin-tests.py
+python3 gui-mac/tests/run-history-navigation-tests.py
+python3 gui-mac/tests/run-viewport-tests.py
+python3 gui-mac/tests/run-versions-tests.py
+python3 gui-mac/tests/run-project-mutation-tests.py
 python3 gui-mac/tests/run-update-tests.py
 python3 gui-mac/tests/run-project-stress-tests.py
 ```
 
 F 内置 Agent 交付必须使用 `scripts/prepare-update.py`，该入口串行执行上述全部回归后才发布清单。
+
+新增聚焦回归使用真实 WebKit 验证历史首次打开、活动父链、旧线性记录、目录符号链接与 Finder 别名、项目行加号。
+视角套件将前端构建到临时目录，验证同项目两条对话的中心与缩放捕获、80次快速切换、窗口尺寸变化及新 WebKit 实例从磁盘恢复。
+版本套件使用临时 Git 仓库和真实 AppKit，验证固定版本圆点、透明背景、水平滚动、多父关系、首次点击启用、简介来源、特殊文件名、删除/二进制/大文件边界及固定 blob 的只读预览。
+项目迁移套件使用临时目录与隔离偏好设置，检查 Rename/Delete 菜单、入口隐藏与恢复、文件夹和关联存储迁移、冲突拒绝与失败回滚。不得使用用户真实项目作为迁移夹具。
+Agent 大版本策略由 `harness/tests/versions*.test.mjs` 验证。GitHub权限查询可用隔离runner，快照祖先隔离用真实本机Git和临时bare仓库验证；这不等同真实GitHub联网发布验收。
 
 需要 macOS 图形登录会话和 Swift 命令行工具。构建脚本会在缺少全局 npm 时使用
 `pi/runtime/node/bin` 中自带的 Node。测试直接编译当前 `main.swift`，只替换应用入口，
@@ -56,7 +66,7 @@ F 内置 Agent 交付必须使用 `scripts/prepare-update.py`，该入口串行�
 - side agent 正在执行或还有排队消息时阻止更新重启，队列排空后恢复。
 - side agent 注册为底栏进程，默认名称 `side agent`，与主对话共享会话专属画板目录。
 - SSH config 的多个别名、Include、引号、通配符与循环引用；非法主机输入被拒绝。
-- 真实本机 PTY 的工作目录与 `F_BOARD_DIR` 和项目画板一致（包含 macOS 临时目录别名）。
+- 真实本机 PTY 的工作目录与 `F_BOARD_DIR` 和当前对话的画板目录一致（包含 macOS 临时目录别名）。
 - 手动密码仅在 PTY 认证提示后发送，随后清空，且不会回显。
 - 真实 OpenSSH ControlMaster 连接；远程文件名含中文、引号、空格或换行时仍可读取。
 - 同一端点和项目下的多个 SSH 面板拥有各自真实运行的终端视图和远程 shell，互不挪动，
@@ -75,8 +85,7 @@ F 内置 Agent 交付必须使用 `scripts/prepare-update.py`，该入口串行�
 - 已登录会话进入项目候选列表，未验证的主机不能绕过认证进入。
 - 真实 SSH 下验证 Agent 的 read/write/edit/bash/ls/find/grep、远程 cwd 和本机代理目录不落文件。
 - AbortSignal 取消远程进程与子进程；连接失效后即使同路径本机文件存在也不能回退读取。
-- Agent 白板工具仍写入对应的集中存储，而不是远程项目目录。
-- PiRPC 启动使用当前认证套接字、远程目录和统一画板环境；项目终端单独复用通道进入远程目录。
+- Agent 白板工具仍写入对应的集中存储，而不是远程项目目录。- PiRPC 启动使用当前认证套接字、远程目录和统一画板环境；项目终端单独复用通道进入远程目录。
 
 插件开关与应用规范追加覆盖：
 
@@ -120,3 +129,13 @@ Cordis 更新后的完整交付还会运行 `harness/tests/*.test.mjs`、固定�
 文件工具、技能、画板、子代理回传/冷恢复/fork/中断、并发工作流和后台取消，并阅读原生回归证据。
 原生插件套件新增服务撤回/替换、幂等逆序释放，以及通过真实 SSH 的官方 DSH 技能发现和正文更新。
 `prepare-update.py` 将所有日志、来源摘要和 CBI 结果保存到该次更新的 validation 目录；任何失败都不发布清单。
+# 浏览器回归
+
+`python3 gui-mac/tests/run-browser-tests.py` 使用隔离网页、Cookie和本机IPC夹具验证浏览器插件；不读取真实 Chrome 密码或 Cookie。`harness/tests/browser.test.mjs` 验证传输与 Chrome 桥接安装配置。完整发布自动运行这两套检查。
+
+浏览器新增真实表单 POST 登录、跨标签/窗口会话、前进后退、window.open 的 opener 回传与关闭、
+target=_blank、6轮连接中断与恢复、网页进程终止、240次切换和窄窗口检查。
+另启动两次独立测试进程，在随机标识的持久 WebKit profile 验证 Cookie/localStorage 跨进程恢复；
+测试结束只清除该测试 profile 的网站数据，不触及用户登录。
+队列套件通过独立 RPC 子进程注入断网、额度耗尽、上下文超限、认证 token 过期、限流和输出预算耗尽，
+检查队列暂停、不自动重发、待发送内容保留及手动恢复。这些是故障模拟，不消耗用户额度来制造真实欠费。

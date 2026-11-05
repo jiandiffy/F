@@ -35,7 +35,7 @@ enum PiHistory {
         let home = fm.homeDirectoryForCurrentUser.path
         candidates += [
             "\(home)/.pi/agent",
-            "\(home)/Desktop/fy/pi/agent",
+            "\(home)/Desktop/fy/F/pi/agent",
             "\(home)/pi/agent",
             "\(home)/Developer/pi/agent",
         ]
@@ -125,7 +125,7 @@ enum PiHistory {
             for part in parts where part["type"] as? String == "text" {
                 if let text = part["text"] as? String { pieces.append(text) }
             }
-            return pieces.isEmpty ? nil : pieces.joined(separator: " ")
+            return pieces.isEmpty ? nil : pieces.joined(separator: "\n")
         }
         return nil
     }
@@ -210,23 +210,67 @@ enum PiConversation {
               let text = String(data: data, encoding: .utf8)
         else { return [] }
 
-        var messages: [ChatMessage] = []
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard let lineData = String(line).data(using: .utf8),
-                  let raw = try? JSONSerialization.jsonObject(with: lineData),
-                  let object = raw as? [String: Any],
-                  object["type"] as? String == "message",
-                  let message = object["message"] as? [String: Any],
-                  let role = message["role"] as? String,
-                  role == "user" || role == "assistant",
-                  let rawContent = PiHistory.textContent(message["content"])
-            else { continue }
-            let content = role == "user" ? PiHistory.stripWhiteboardPrompt(rawContent) : rawContent
-            guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-
-            messages.append(ChatMessage(role: role == "user" ? .user : .assistant, text: content))
+        let entries: [[String: Any]] = text.split(separator: "\n", omittingEmptySubsequences: true).compactMap {
+            guard let data = String($0).data(using: .utf8) else { return nil }
+            return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         }
+        var messages: [ChatMessage] = []
+        var reply: String?
+        func finishReply() {
+            if let reply { messages.append(ChatMessage(role: .assistant, text: reply)) }
+            reply = nil
+        }
+        for object in activeBranch(entries) {
+            guard object["type"] as? String == "message",
+                  let message = object["message"] as? [String: Any] else { continue }
+            switch message["role"] as? String {
+            case "user":
+                guard let raw = PiHistory.textContent(message["content"]) else { continue }
+                finishReply()
+                let text = PiHistory.stripWhiteboardPrompt(raw)
+                if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    messages.append(ChatMessage(role: .user, text: text))
+                }
+            case "assistant":
+                // A child completion can trigger another assistant message in the
+                // same user turn. Show only the last completed answer, not the
+                // tool-call preambles, partial/error responses or agent relays.
+                reply = finalReply(message)
+            default:
+                break
+            }
+        }
+        finishReply()
         return messages
+    }
+
+    static func finalReply(_ message: [String: Any]) -> String? {
+        guard message["role"] as? String == "assistant",
+              message["customType"] == nil,
+              message["stopReason"] == nil || message["stopReason"] as? String == "stop",
+              !(message["content"] as? [[String: Any]] ?? []).contains(where: { $0["type"] as? String == "toolCall" }),
+              let text = PiHistory.textContent(message["content"]),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return text
+    }
+
+    /// Matches pi's persisted leaf: the last non-header entry, including metadata.
+    /// Legacy linear logs have no parentId and must continue to display in file order.
+    static func activeBranch(_ entries: [[String: Any]]) -> [[String: Any]] {
+        let entries = entries.filter { $0["type"] as? String != "session" }
+        guard entries.contains(where: { $0.keys.contains("parentId") }),
+              let leaf = entries.last(where: { $0["id"] is String }) else { return entries }
+        var byID: [String: [String: Any]] = [:]
+        for entry in entries {
+            if let id = entry["id"] as? String { byID[id] = entry }
+        }
+        var path: [[String: Any]] = [], visited = Set<String>()
+        var current: [String: Any]? = leaf
+        while let entry = current, let id = entry["id"] as? String, visited.insert(id).inserted {
+            path.append(entry)
+            current = (entry["parentId"] as? String).flatMap { byID[$0] }
+        }
+        return path.reversed()
     }
 }
 

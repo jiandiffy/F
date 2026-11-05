@@ -21,17 +21,20 @@ export async function atomicJSON(file, value) {
   finally { await rm(temp, { force: true }); }
 }
 
-export async function withLock(directory, run) {
+export async function withLock(directory, run, { timeoutMs = 5000, signal } = {}) {
+  signal?.throwIfAborted();
   await mkdir(path.dirname(directory), { recursive: true, mode: 0o700 });
-  for (let attempt = 0; ; attempt++) {
+  const deadline = performance.now() + timeoutMs;
+  for (;;) {
+    signal?.throwIfAborted();
     try { await mkdir(directory, { mode: 0o700 }); break; }
     catch (error) {
       if (error.code !== 'EEXIST') throw error;
-      if (attempt === 100) throw new Error('Dataset/version is busy. Retry after its current operation finishes.');
+      if (performance.now() >= deadline) throw new Error('Dataset/version is busy. Retry after its current operation finishes.');
       await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
-  try { return await run(); } finally { await rm(directory, { recursive: true }); }
+  try { signal?.throwIfAborted(); return await run(); } finally { await rm(directory, { recursive: true }); }
 }
 
 export class DatasetStore {

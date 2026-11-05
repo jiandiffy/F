@@ -100,13 +100,24 @@ def install(manifest, old_pid):
             raise
         installed = True
         subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(target)], check=True)
-        subprocess.run(['/usr/bin/open', '-n', str(target)], check=True)
+        # A retry must acknowledge this launch, never a receipt from an earlier process.
+        boot = update / 'boot.json'
         ready = update / 'ready.json'
-        deadline = time.monotonic() + 20
+        boot.unlink(missing_ok=True)
+        ready.unlink(missing_ok=True)
+        subprocess.run(['/usr/bin/open', '-n', '-a', str(target)], check=True)
+        deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             if ready.exists():
+                started = json.loads(boot.read_text())
+                acknowledged = json.loads(ready.read_text())
+                pid = started.get('pid')
+                if (started.get('id') != data['id'] or acknowledged.get('id') != data['id']
+                        or not isinstance(pid, int) or pid <= 0 or pid == old_pid or acknowledged.get('pid') != pid):
+                    raise RuntimeError('Updated F returned an invalid startup receipt')
+                os.kill(pid, 0)
                 (root / 'pending.json').unlink(missing_ok=True)
-                atomic_json(update / 'result.json', {'success': True, 'announcement': data['announcement']})
+                atomic_json(update / 'result.json', {'success': True, 'pid': pid, 'announcement': data['announcement']})
                 return
             time.sleep(.2)
         raise RuntimeError('Updated F did not finish starting')
@@ -129,7 +140,7 @@ def install(manifest, old_pid):
             resume['announcement'] = '更新启动失败，已恢复上一版本。原项目与画板数据已保留。'
             atomic_json(resume_file, resume)
         atomic_json(update / 'result.json', {'success': False, 'error': str(error)})
-        subprocess.run(['/usr/bin/open', '-n', str(target)], check=True)
+        subprocess.run(['/usr/bin/open', '-n', '-a', str(target)], check=True)
         raise
 
 

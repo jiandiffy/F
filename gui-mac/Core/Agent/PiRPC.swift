@@ -19,6 +19,17 @@ final class PiRPC {
     private static let registry = NSHashTable<PiRPC>.weakObjects()
     static func stopAll() { registry.allObjects.forEach { $0.stop() } }
 
+    /// Read-only lifetime query, including standalone/side-agent RPCs outside a window's views.
+    /// Never stop a backend to make relocation possible; unrelated cwd values do not block it.
+    static func hasRunningAgent(inProject project: URL) -> Bool {
+        let root = project.resolvingSymlinksInPath().standardizedFileURL.path
+        return registry.allObjects.contains { rpc in
+            guard rpc.isRunning, let configured = rpc.configuredProject else { return false }
+            let cwd = URL(fileURLWithPath: configured).resolvingSymlinksInPath().standardizedFileURL.path
+            return cwd == root || cwd.hasPrefix(root == "/" ? "/" : root + "/")
+        }
+    }
+
     var onEvent: (([String: Any]) -> Void)?
     var onExit: ((String) -> Void)?
 
@@ -34,6 +45,9 @@ final class PiRPC {
     private var configuredConversation: String?
     private var configuredRemoteSocket: String?
     private var configuredPlugins: String?
+    private var relocationClose: (id: UUID, completion: (Result<Void, Error>) -> Void)?
+    private(set) var isInputClosedForRelocation = false
+    var hasPendingRequests: Bool { !callbacks.isEmpty }
 
     var isRunning: Bool { process?.isRunning ?? false }
 
@@ -51,6 +65,7 @@ final class PiRPC {
 
     @discardableResult
     func start(cliPath: String, workingDirectory: URL, boardDirectory: URL? = nil, conversationDirectory: URL? = nil) -> Bool {
+        guard !isInputClosedForRelocation else { return false }
         stop()
         let connection = generation
 
@@ -119,10 +134,16 @@ final class PiRPC {
                 self.outPipe?.fileHandleForReading.readabilityHandler = nil
                 self.errPipe?.fileHandleForReading.readabilityHandler = nil
                 self.process = nil
+                let wasRelocation = self.isInputClosedForRelocation
+                self.isInputClosedForRelocation = false
+                let close = self.relocationClose
+                self.relocationClose = nil
                 let pending = self.callbacks
                 self.callbacks.removeAll()
                 pending.values.forEach { $0(["success": false, "error": "pi 连接已断开"]) }
-                self.onExit?("pi 连接已断开（退出码 \(finished.terminationStatus)）")
+                self.onExit?(wasRelocation ? "空闲会话已自然关闭" : "pi 连接已断开（退出码 \(finished.terminationStatus)）")
+                if finished.terminationReason == .exit, finished.terminationStatus == 0 { close?.completion(.success(())) }
+                else { close?.completion(.failure(ProjectMutation.Failure(message: "会话退出异常，保留原状态，请正常退出并重开 F。"))) }
             }
         }
 
@@ -167,7 +188,39 @@ final class PiRPC {
         buffer.removeAll()
     }
 
+    /// Caller must verify UI/model/queue idleness immediately before invoking this method.
+    /// EOF is the only shutdown request: timeout leaves the process and its handlers alive.
+    func closeInputAndWaitForRelocation(timeout: TimeInterval = 8, completion: @escaping (Result<Void, Error>) -> Void) {
+        guard relocationClose == nil, !isInputClosedForRelocation else {
+            completion(.failure(ProjectMutation.Failure(message: "该会话已在等待自然退出，请勿重复关闭；超时后可正常退出并重开 F。"))); return
+        }
+        guard callbacks.isEmpty else {
+            completion(.failure(ProjectMutation.Failure(message: "会话仍有 RPC 请求，未关闭输入。"))); return
+        }
+        guard let process, process.isRunning else { completion(.success(())); return }
+        guard let pipe = process.standardInput as? Pipe else {
+            completion(.failure(ProjectMutation.Failure(message: "无法安全关闭会话输入，未终止进程。"))); return
+        }
+        let id = UUID()
+        relocationClose = (id, completion)
+        isInputClosedForRelocation = true
+        do { try pipe.fileHandleForWriting.close() } catch {
+            relocationClose = nil
+            // The descriptor might already be closed. Keep the fail-closed state until exit.
+            completion(.failure(ProjectMutation.Failure(message: "关闭会话输入失败，保留状态且未终止进程：" + error.localizedDescription))); return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.01, timeout)) { [weak self] in
+            guard let self, self.relocationClose?.id == id, self.process === process else { return }
+            let callback = self.relocationClose?.completion
+            self.relocationClose = nil
+            callback?(.failure(ProjectMutation.Failure(message: "等待会话自然退出超时，未发送 terminate/SIGKILL；状态已保留，请正常退出并重开 F。")))
+        }
+    }
+
     func request(_ command: [String: Any], completion: (([String: Any]) -> Void)? = nil) {
+        guard !isInputClosedForRelocation else {
+            completion?(["success": false, "error": "会话正在自然退出，尚未重连；请稍候或正常退出并重开 F。"]); return
+        }
         guard let process, process.isRunning, let pipe = process.standardInput as? Pipe else {
             completion?(["success": false, "error": "pi 未运行"])
             return

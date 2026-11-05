@@ -63,7 +63,10 @@ class UpdateTests(unittest.TestCase):
     def test_success_keeps_bundle_directory_and_backup(self):
         inode=self.target.stat().st_ino
         def command(args,**kwargs):
-            if args[0]=='/usr/bin/open':(self.path/self.id/'ready.json').write_text('ready')
+            if args[0]=='/usr/bin/open':
+                self.assertEqual(args,['/usr/bin/open','-n','-a',str(self.target)])
+                receipt={'id':self.id,'pid':os.getpid()}
+                for name in ['boot.json','ready.json']:helper.atomic_json(self.path/self.id/name,receipt)
             return subprocess.CompletedProcess(args,0)
         with mock.patch.object(helper,'load_manifest',side_effect=self.loader),mock.patch.object(helper.subprocess,'run',side_effect=command):
             helper.install(self.manifest,99999999)
@@ -71,9 +74,25 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual((self.target/'Contents/MacOS/F').read_bytes(),b'new')
         self.assertEqual((self.path/self.id/'previous.app/Contents/MacOS/F').read_bytes(),b'old')
         self.assertFalse(self.manifest.exists())
+        self.assertEqual(json.loads((self.path/self.id/'result.json').read_text())['pid'],os.getpid())
+    def test_stale_receipts_do_not_report_a_restart(self):
+        for name in ['boot.json','ready.json']:helper.atomic_json(self.path/self.id/name,{'id':self.id,'pid':os.getpid()})
+        with mock.patch.object(helper,'load_manifest',side_effect=self.loader),mock.patch.object(helper.subprocess,'run',return_value=subprocess.CompletedProcess([],0)),mock.patch.object(helper.time,'monotonic',side_effect=[0,0,61]):
+            with self.assertRaisesRegex(RuntimeError,'did not finish'):helper.install(self.manifest,99999999)
+        self.assertFalse(json.loads((self.path/self.id/'result.json').read_text())['success'])
+        self.assertEqual((self.target/'Contents/MacOS/F').read_bytes(),b'old')
+    def test_receipt_from_another_process_is_rejected(self):
+        def command(args,**kwargs):
+            if args[0]=='/usr/bin/open' and not (self.path/self.id/'result.json').exists():
+                helper.atomic_json(self.path/self.id/'boot.json',{'id':self.id,'pid':99999999})
+                helper.atomic_json(self.path/self.id/'ready.json',{'id':self.id,'pid':os.getpid()})
+            return subprocess.CompletedProcess(args,0)
+        with mock.patch.object(helper,'load_manifest',side_effect=self.loader),mock.patch.object(helper.subprocess,'run',side_effect=command):
+            with self.assertRaisesRegex(RuntimeError,'invalid startup receipt'):helper.install(self.manifest,99999999)
+        self.assertEqual((self.target/'Contents/MacOS/F').read_bytes(),b'old')
     def test_failed_start_rolls_back(self):
         helper.atomic_json(self.path/'resume.json',{'announcement':'new'})
-        with mock.patch.object(helper,'load_manifest',side_effect=self.loader),mock.patch.object(helper.subprocess,'run',return_value=subprocess.CompletedProcess([],0)),mock.patch.object(helper.time,'monotonic',side_effect=[0,0,21]):
+        with mock.patch.object(helper,'load_manifest',side_effect=self.loader),mock.patch.object(helper.subprocess,'run',return_value=subprocess.CompletedProcess([],0)),mock.patch.object(helper.time,'monotonic',side_effect=[0,0,61]):
             with self.assertRaisesRegex(RuntimeError,'did not finish'):helper.install(self.manifest,99999999)
         self.assertEqual((self.target/'Contents/MacOS/F').read_bytes(),b'old')
         self.assertFalse(json.loads((self.path/self.id/'result.json').read_text())['success'])

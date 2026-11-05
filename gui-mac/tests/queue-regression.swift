@@ -10,7 +10,7 @@ extension GlassComposer {
     var glassTopForTest: CGFloat { glass.frame.maxY }
     var queueBottomForTest: CGFloat { queueView.frame.minY }
 }
-extension WhiteboardView { var queueComposerForTest: GlassComposer { composer } }
+extension WhiteboardView { var queueComposerForTest: GlassComposer { composer! } }
 extension ConversationView {
     var queuedForTest: [QueuedPrompt] { queue }
     var pausedForTest: Bool { queuePaused }
@@ -30,10 +30,17 @@ extension ConversationView {
     func bindBoardForTest(_ board: WhiteboardView) {
         board.connectOptions(to: self)
         board.onPrompt = { [weak self] text in self?.askWhiteboard(text) }
+        board.composer?.onSend = { [weak board] text in board?.onPrompt?(text) }
     }
     func setProjectForTest(_ url: URL) { projectDirectory = url }
-    func responseCompletedForTest() {
-        handle(["type": "message_end", "message": ["role": "assistant", "stopReason": "stop", "content": [["type": "text", "text": "DONE"]]]])
+    func responseCompletedForTest(_ completion: @escaping () -> Void) {
+        // The reply follows message_start on the same RPC stream. A sent prompt
+        // alone does not mean that the UI has consumed that event yet.
+        agent.request(["type": "get_state"]) { response in
+            expect(response["success"] as? Bool == true, "RPC event barrier must complete")
+            self.handle(["type": "message_end", "message": ["role": "assistant", "stopReason": "stop", "content": [["type": "text", "text": "DONE"]]]])
+            completion()
+        }
     }
     func timeoutUpdateForTest() {
         let completion = checkpointCompletion
@@ -309,15 +316,20 @@ func wedge() {
     }
 }
 func failures() {
-    view.inputForTest("ERROR_FAIL"); view.inputForTest("AFTER_ERROR")
+    failureCase(["ERROR_FAIL", "ERROR_OFFLINE", "ERROR_QUOTA", "ERROR_CONTEXT", "ERROR_EXPIRED_TOKEN", "ERROR_RATE_LIMIT", "ERROR_OUTPUT_LIMIT"], index: 0)
+}
+func failureCase(_ cases: [String], index: Int) {
+    if index == cases.count { checkpointRestart(); return }
+    let failure = cases[index], next = "AFTER_\(failure)"
+    view.inputForTest(failure); view.inputForTest(next)
     finishScenario("model errors pause the queue without dropping later prompts") {
-        expect(view.pausedForTest && view.queuedForTest.first?.text == "AFTER_ERROR", "error should pause, not consume, later prompts")
+        expect(view.pausedForTest && view.queuedForTest.first?.text == next, "error should pause, not consume, later prompts")
+        expect(prompts().filter { $0 == failure }.count == 1, "failed request must not be retried automatically")
         view.inputForTest("")
-        finishScenario("queue can resume after a model error") {
-            expectSuffix(["ERROR_FAIL", "AFTER_ERROR"])
+        finishScenario("queue can resume after \(failure)") {
+            expectSuffix([failure, next])
             expect(!view.interruptCurrent(), "idle Ctrl+C should remain available to the terminal")
-            checkpointRestart()
-
+            failureCase(cases, index: index + 1)
         }
     }
 }
@@ -441,16 +453,17 @@ func checkpointCompletedRace() {
     held("ACK_FIRST_HOLD_UPDATE_COMPLETED") {
         let before = prompts().count
         view.inputForTest("UPDATE_COMPLETED_NEXT")
-        view.responseCompletedForTest() // Final stop arrived, but agent_settled is still pending.
-        view.interruptForUpdate(id: "abc-128") { result in
-            if case .failure(let error) = result { fatalError("checkpoint: \(error)") }
-            expect(view.updateResume(id: "abc-128", announcement: "").interruption?.promptCompleted == true, "completed response marker must precede checkpoint")
-            view.continueAfterUpdate()
-            eventually("completed response is not repeated", { view.idleForTest }) {
-                expect(Array(prompts().dropFirst(before)) == ["UPDATE_COMPLETED_NEXT"], "completed task must not be replayed")
-                print("PASS: final response before checkpoint is not replayed after settle")
-                view.cleanupForTest()
-                checkpointLateAbort()
+        view.responseCompletedForTest { // Final stop arrived, but agent_settled is still pending.
+            view.interruptForUpdate(id: "abc-128") { result in
+                if case .failure(let error) = result { fatalError("checkpoint: \(error)") }
+                expect(view.updateResume(id: "abc-128", announcement: "").interruption?.promptCompleted == true, "completed response marker must precede checkpoint")
+                view.continueAfterUpdate()
+                eventually("completed response is not repeated", { view.idleForTest }) {
+                    expect(Array(prompts().dropFirst(before)) == ["UPDATE_COMPLETED_NEXT"], "completed task must not be replayed")
+                    print("PASS: final response before checkpoint is not replayed after settle")
+                    view.cleanupForTest()
+                    checkpointLateAbort()
+                }
             }
         }
     }
@@ -519,6 +532,7 @@ uiChecks()
 let view = ConversationView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
 view.setProjectForTest(project)
 let board = WhiteboardView(project: project)
+board.composer = GlassComposer(frame: .zero)
 view.bindBoardForTest(board)
 fifo()
 DispatchQueue.main.asyncAfter(deadline: .now() + 40) { fputs("FAIL: queue suite timed out\n", stderr); exit(1) }

@@ -87,9 +87,13 @@ def prepare(args, root):
         command.append('--no-whiteboard')
     run('isolated-build', command)
     node = str(source/'pi/runtime/node/bin/node')
-    run('harness', [node, '--test', *[str(p) for p in sorted((source/'harness/tests').glob('*.test.mjs'))]])
+    # A maintenance Agent inherits its real board/lease paths. Tests must never use that ledger.
+    harness_env = dict(os.environ, F_BOARD_DIR=str(validation/'harness-board'),
+                       F_CONVERSATION_DIR=str(validation/'harness-conversation'))
+    harness_env.pop('F_AGENT_ID', None)
+    run('harness', [node, '--test', *[str(p) for p in sorted((source/'harness/tests').glob('*.test.mjs'))]], env=harness_env)
     run('provider-tool-bridge', [node, '--test', str(source/'pi/scripts/test-codebuddy-tool-replay.mjs')])
-    for suite in ['run-whiteboard-tests.py', 'run-queue-tests.py', 'run-plugin-tests.py', 'run-file-browser-tests.py', 'run-update-tests.py', 'run-project-stress-tests.py']:
+    for suite in ['run-whiteboard-tests.py', 'run-queue-tests.py', 'run-plugin-tests.py', 'run-file-browser-tests.py', 'run-history-navigation-tests.py', 'run-viewport-tests.py', 'run-versions-tests.py', 'run-project-mutation-tests.py', 'run-update-tests.py', 'run-project-stress-tests.py', 'run-daily-paper-tests.py', 'run-paper-media-tests.py', 'run-gmail-tests.py', 'run-browser-tests.py']:
         run(suite.removesuffix('.py'), ['/usr/bin/python3', str(source/'gui-mac/tests'/suite)])
     # Test the exact frozen Harness carried by the signed candidate, with real model calls.
     run('cbi-deepseek-flash', [node, str(source/'harness/tests/test-cbi.mjs'), '--report', str(validation/'cbi.json'), '--native-report', str(report_path)],

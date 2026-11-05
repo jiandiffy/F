@@ -45,8 +45,8 @@ pi --list-models
 可检查登录/目录初始化（不发起模型推理）：
 
 ```sh
-/Users/fanfy/Desktop/fy/pi/runtime/node/bin/node /Users/fanfy/Desktop/fy/pi/scripts/probe-codebuddy.mjs cbc
-/Users/fanfy/Desktop/fy/pi/runtime/node/bin/node /Users/fanfy/Desktop/fy/pi/scripts/probe-codebuddy.mjs cbi
+/Users/fanfy/Desktop/fy/F/pi/runtime/node/bin/node /Users/fanfy/Desktop/fy/F/pi/scripts/probe-codebuddy.mjs cbc
+/Users/fanfy/Desktop/fy/F/pi/runtime/node/bin/node /Users/fanfy/Desktop/fy/F/pi/scripts/probe-codebuddy.mjs cbi
 ```
 
 
@@ -66,8 +66,8 @@ DeepSeek：在 Pi 中输入 `/login`，选择 `dp` 更新 API 密钥。
 依赖固定在 package.json 和 package-lock.json 中。更新前保留整个目录；更新 SDK 后运行：
 
 ```sh
-/Users/fanfy/Desktop/fy/pi/runtime/node/bin/node --version
-python3 /Users/fanfy/Desktop/fy/pi/scripts/build-codebuddy-providers.py
+/Users/fanfy/Desktop/fy/F/pi/runtime/node/bin/node --version
+python3 /Users/fanfy/Desktop/fy/F/pi/scripts/build-codebuddy-providers.py
 ```
 
 隔离脚本针对当前固定版本；升级 SDK 扩展时应核对源码变化，并重新验证国内与海外的登录和工具调用。

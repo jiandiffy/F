@@ -544,13 +544,33 @@ final class FileBrowserView: NSView, NSTextViewDelegate {
 
     private func open(_ item: FileItem) {
         guard flushPendingEdits() else { return }
-        if item.isDirectory {
+        let target = Self.navigationTarget(item.url)
+        guard let values = try? target.resourceValues(forKeys: [.isDirectoryKey]) else {
+            showError("快捷方式目标不存在或不可访问。")
+            return
+        }
+        if values.isDirectory == true {
             if let currentURL { history.append(currentURL) }
-            currentURL = item.url
+            currentURL = target
             showList()
         } else {
+            // Keep file-link write protection; only directory navigation follows targets.
             showPreview(item.url)
         }
+    }
+
+    static func navigationTarget(_ url: URL) -> URL {
+        var target = url.standardizedFileURL
+        var visited = Set<String>()
+        for _ in 0..<32 {
+            guard visited.insert(target.path).inserted else { break }
+            let resolved = target.resolvingSymlinksInPath()
+            if resolved != target { target = resolved; continue }
+            guard (try? target.resourceValues(forKeys: [.isAliasFileKey]))?.isAliasFile == true,
+                  let alias = try? URL(resolvingAliasFileAt: target, options: [.withoutUI, .withoutMounting]) else { break }
+            target = alias.standardizedFileURL
+        }
+        return target
     }
 
     private func items(in url: URL?) -> [FileItem] {
@@ -564,7 +584,7 @@ final class FileBrowserView: NSView, NSTextViewDelegate {
 
         var items: [FileItem] = []
         for fileURL in urls.prefix(600) {
-            let values = try? fileURL.resourceValues(forKeys: keys)
+            let values = try? Self.navigationTarget(fileURL).resourceValues(forKeys: keys)
             items.append(FileItem(
                 url: fileURL,
                 isDirectory: values?.isDirectory ?? false,

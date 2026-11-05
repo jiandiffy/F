@@ -49,6 +49,7 @@ final class FolderDropHintView: NSView {
 // MARK: - 窗口内容
 
 final class RootView: NSView {
+    private static let mutationHosts = NSHashTable<RootView>.weakObjects()
     private enum WorkspaceMode: Equatable {
         case application(String)
         case conversation
@@ -75,6 +76,7 @@ final class RootView: NSView {
     var conversationView: ConversationView { activeConversation }
     private let whiteboardPlugin: WhiteboardPlugin
     private let dropHint = FolderDropHintView(frame: .zero)
+    private let overlayDock = AgentOverlayDock(frame: .zero)
     private var whiteboardView: WhiteboardView { whiteboardPlugin.board }
     private var darkTheme = false
     private var lastActivitySignature = ""
@@ -82,8 +84,15 @@ final class RootView: NSView {
     private var initialConversationAvailable = true
 
     private var projectURL = ProjectStore.initial()
-    private var mode: WorkspaceMode = .application("whiteboard")
+    private var mode: WorkspaceMode = .application("whiteboard") {
+        didSet {
+            needsLayout = true
+            syncOverlayMode()
+        }
+    }
     private var pendingBoardStorageReload = false
+    private var projectMutationBusy = false
+    private var projectMutationGeneration = 0
     private var projectMenu: NSMenu?
     private var hostObserver: NSObjectProtocol?
     private var folderPicker: RemoteFolderPicker?
@@ -125,12 +134,25 @@ final class RootView: NSView {
         bottomHost = BottomPluginHost(registry: registry, project: project)
         projectURL = project
         super.init(frame: frameRect)
+        Self.mutationHosts.add(self)
 
         wantsLayer = true
         // 文件夹可以直接拖到窗口任意位置（包括网页视图上方）。
         registerForDraggedTypes([.fileURL])
         (registry.plugins.filter { $0.placement == .workspace }.map(\.view) +
-         [activeConversation, bottomPanel, leftPanel, rightPanel, leftButton, addButton, bottomButton, rightButton, dropHint]).forEach(addSubview)
+         [activeConversation, bottomPanel, leftPanel, rightPanel] +
+         registry.plugins.filter { $0.placement == .workspace }.compactMap(\.toolbarView) +
+         [leftButton, addButton, bottomButton, rightButton, dropHint]).forEach(addSubview)
+        addSubview(overlayDock)
+        whiteboardView.composer = overlayDock.composer
+        overlayDock.messagesProvider = { [weak self] in self?.activeConversation.recentMessages() ?? [] }
+        overlayDock.onSizeChange = { [weak self] in self?.needsLayout = true }
+        overlayDock.composer.onSend = { [weak self] text in
+            guard let self else { return }
+            if case .application("whiteboard") = self.mode { self.activeConversation.askWhiteboard(text) }
+            else { self.activeConversation.askFromOverlay(text) }
+        }
+        whiteboardView.onComposerVisibility = { [weak self] hidden in self?.overlayDock.setComposerHidden(hidden) }
         bottomPanel.addSubview(bottomHost)
         refreshRightSidebar()
         hostObserver = NotificationCenter.default.addObserver(forName: .fSSHChanged, object: nil, queue: .main) { [weak self] _ in self?.populateProjectMenu() }
@@ -153,7 +175,10 @@ final class RootView: NSView {
             self.rightButton.isActive = true
             self.animateLayout()
         }
-        bottomHost.transcriptProvider = { [weak self] in self?.activeConversation.recentTranscript() ?? "" }
+        bottomHost.transcriptProvider = { [weak self] in self?.sideAgentContext() ?? "" }
+        (registry.plugin("daily-paper") as? DailyPaperPlugin)?.onOpenPaper = { [weak self] paper in
+            self?.openDailyPaper(paper)
+        }
         bottomHost.boardDirectoryProvider = { [weak self] in
             self?.activeConversation.boardDirectory ?? BoardStore.directory(for: ProjectStore.initial())
         }
@@ -183,9 +208,7 @@ final class RootView: NSView {
         chat.onOpenProject = { [weak self] project in self?.selectProject(project) }
         chat.onNewConversation = { [weak self] project in self?.openProject(project) }
         chat.onProjectCommand = { [weak self] project, command in
-            guard let self, self.flushFileEdits() else { return }
-            self.selectProject(project)
-            self.performApplicationCommand("versions", command: command)
+            self?.handleProjectCommand(project, command: command)
         }
         ProjectStore.remember(project)
         chat.selectProject(project, session: startView.sessionPath)
@@ -231,9 +254,16 @@ final class RootView: NSView {
             matching: [.keyDown, .leftMouseDown, .leftMouseDragged, .leftMouseUp]
         ) { [weak self] event in
             guard let self else { return event }
+            if event.type == .leftMouseDown, self.overlayDock.isExpanded, !self.overlayDock.isHidden,
+               let hit = self.window?.contentView?.hitTest(event.locationInWindow),
+               hit !== self.overlayDock, !hit.isDescendant(of: self.overlayDock) {
+                // 点主页面收回成一行。
+                self.overlayDock.collapse()
+            }
             if AgentInterruptShortcut.matches(event), self.conversationView.interruptCurrent() { return nil }
             return self.handleWindowDrag(event)
         }
+        syncOverlayMode()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -289,7 +319,7 @@ final class RootView: NSView {
         plugins.plugins.compactMap { $0 as? FProcessActivity }.contains { $0.hasPendingWork }
     }
     func canBeginUpdate(originSession: String?) -> Bool {
-        guard !bottomHost.hasPendingWork, !pluginsHavePendingWork else { return false }
+        guard !projectMutationBusy, !bottomHost.hasPendingWork, !pluginsHavePendingWork else { return false }
         if let originSession, let origin = conversations.values.first(where: { $0.ownsSession(originSession) }) {
             return !origin.hasPendingWork
         }
@@ -297,7 +327,7 @@ final class RootView: NSView {
         return conversations.values.allSatisfy { !$0.hasPendingWork }
     }
     var canRestartForUpdate: Bool {
-        conversations.values.allSatisfy { $0.canRestartForUpdate } && !bottomHost.hasPendingWork && !pluginsHavePendingWork
+        !projectMutationBusy && conversations.values.allSatisfy { $0.canRestartForUpdate } && !bottomHost.hasPendingWork && !pluginsHavePendingWork
     }
     func interruptForUpdate(id: String, completion: @escaping (Result<Void, Error>) -> Void) {
         let group = DispatchGroup()
@@ -390,7 +420,8 @@ final class RootView: NSView {
         }
         plugins.setEnabled(id, enabled) { [weak self] changed in
             if changed, enabled, id == "ssh" { SSHSessions.shared.refresh() }
-            if changed, enabled, self?.plugins.plugin(id)?.placement == .workspace { self?.showApplication(id) }
+            // A global preference is not authorization to enable a repository's version tree.
+            if changed, enabled, id != "versions", self?.plugins.plugin(id)?.placement == .workspace { self?.showApplication(id) }
         }
     }
     private func refreshPluginState() {
@@ -402,6 +433,7 @@ final class RootView: NSView {
         if case .application(let id) = mode, !plugins.isEnabled(id) { showConversation(nil) }
         for plugin in plugins.plugins where plugin.placement == .workspace {
             plugin.view.isHidden = mode != .application(plugin.id) || !plugins.isEnabled(plugin.id)
+            plugin.toolbarView?.isHidden = plugin.view.isHidden
         }
         if case .application(let id) = mode { leftSidebar.selectApplication(id) }
         refreshRightSidebar()
@@ -409,6 +441,7 @@ final class RootView: NSView {
         needsLayout = true
     }
     func performApplicationCommand(_ id: String, command: String) {
+        if id == "versions", !["open", "publish"].contains(command) { return }
         guard plugins.isEnabled(id), let plugin = plugins.applicationPlugins.first(where: { $0.id == id }) else { return }
         showApplication(id)
         plugin.performMenuCommand(command)
@@ -417,9 +450,33 @@ final class RootView: NSView {
 
     // MARK: 工作区切换
 
+    /// 离开主对话时，窗口级对话框停在应用界面的右下角；回到对话则用对话自己的输入框。
+    private func syncOverlayMode() {
+        overlayDock.isHidden = mode == .conversation
+        overlayDock.frame = conversationFrame()
+        if case .application("whiteboard") = mode {} else { overlayDock.setComposerHidden(false) }
+        if overlayDock.isHidden { overlayDock.reset() }
+    }
+
     /// 画板等按项目关联的模块始终跟随当前对话所在的项目。
     /// 窗口缓存的 projectURL 只用来记住最近打开的项目，不单独决定画板归属。
     private var activeProjectURL: URL { URL(fileURLWithPath: activeConversation.projectPath) }
+
+    private func sideAgentContext() -> String {
+        let transcript = activeConversation.recentTranscript()
+        guard plugins.isEnabled("daily-paper") else { return transcript }
+        if mode == .application("daily-paper"), let paper = (plugins.plugin("daily-paper") as? DailyPaperPlugin)?.currentAnalysisContext {
+            return [transcript, paper].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        }
+        return [transcript, activeConversation.dailyPaperContext].filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
+    private func openDailyPaper(_ paper: DailyPaperRecord) {
+        guard plugins.isEnabled("daily-paper"), flushFileEdits() else { return }
+        guard activeConversation.askDailyPaper(paper) else { return }
+        activateConversation(activeConversation)
+        activeConversation.focusComposer()
+    }
 
     private func showApplication(_ id: String) {
         guard flushFileEdits() else { return }
@@ -431,9 +488,194 @@ final class RootView: NSView {
         if project.path != projectURL.path { setProject(project) }
         else if plugin.projectAssociation == .project { plugin.projectDidChange(projectURL) }
         conversations.values.forEach { $0.isHidden = true }
-        for application in plugins.plugins where application.placement == .workspace { application.view.isHidden = application.id != id }
+        for application in plugins.plugins where application.placement == .workspace {
+            application.view.isHidden = application.id != id
+            application.toolbarView?.isHidden = application.view.isHidden
+        }
         leftSidebar.selectApplication(id)
         plugin.activate()
+    }
+
+    // MARK: 项目入口变更
+
+    func projectMutationBlockReason(_ source: URL) -> String? {
+        for host in Self.mutationHosts.allObjects {
+            if host.projectMutationBusy { return "另一个项目变更仍在保存，请稍后重试。" }
+            for view in host.conversations.values where ProjectMutation.contains(view.projectPath, in: source.path) ||
+                (view.sessionPath.map { ProjectMutation.contains($0, in: source.path) } ?? false) {
+                if view.blocksProjectMutation { return "该项目或子目录仍有会话启动、队列或存活 Agent；请先关闭该项目会话后重试。其他项目不受影响。" }
+            }
+            if host.bottomHost.blocksProjectMutation(source) { return "该项目仍有底栏进程，请先正常关闭相关终端/Agent，不会自动终止进程。" }
+            for plugin in host.plugins.plugins {
+                if let terminal = plugin as? TerminalPlugin, terminal.terminal.isRunning,
+                   let directory = terminal.terminal.directory,
+                   ProjectMutation.contains(directory.resolvingSymlinksInPath().path, in: source.path) { return "该项目终端仍存活，请先正常关闭终端。" }
+                if plugin.projectAssociation == .project, ProjectMutation.contains(host.projectURL.path, in: source.path),
+                   (plugin as? FProcessActivity)?.hasPendingWork == true { return "该项目插件仍有未完成任务，未迁移。" }
+            }
+        }
+        if PiRPC.hasRunningAgent(inProject: source) {
+            return "该项目或子目录仍有独立/其他窗口 RPC。请关闭相关空闲会话或底栏标签；无法安全回收时请正常退出并重开 F，绝不强杀进程。"
+        }
+        return nil
+    }
+
+    private func mutationConversations(_ source: URL) -> [(host: RootView, view: ConversationView)] {
+        Self.mutationHosts.allObjects.flatMap { host in
+            host.conversations.values.filter { view in
+                ProjectMutation.contains(view.projectPath, in: source.path) ||
+                    (view.sessionPath.map { ProjectMutation.contains($0, in: source.path) } ?? false)
+            }.map { (host: host, view: $0) }
+        }
+    }
+
+    func closeIdleProjectConversations(_ source: URL, timeout: TimeInterval = 8,
+                                       completion: @escaping (Result<Void, Error>) -> Void) {
+        func fail(_ message: String) { completion(.failure(ProjectMutation.Failure(message: message))) }
+        let maintenanceRoot = "/Users/fanfy/Desktop/fy/F"
+        guard !ProjectMutation.contains(source.path, in: maintenanceRoot), !ProjectMutation.contains(maintenanceRoot, in: source.path) else {
+            fail("不能回收 F 源码维护会话，请保留当前维护 Agent。"); return
+        }
+        let conversations = mutationConversations(source)
+        guard conversations.allSatisfy({ $0.view.canCloseIdleAgentForProjectMutation }) else {
+            fail("该项目某个窗口仍有启动、任务、取消或暂停队列；未关闭任何会话。请先完成任务并处理队列。"); return
+        }
+        for host in Self.mutationHosts.allObjects {
+            guard !host.projectMutationBusy, !host.bottomHost.blocksProjectMutation(source) else {
+                fail("项目迁移或底栏进程仍在运行，请先通过底栏标签正常关闭；不会自动终止进程。"); return
+            }
+            if ProjectMutation.contains(host.projectURL.path, in: source.path),
+               host.plugins.plugins.contains(where: { ($0 as? FProcessActivity)?.hasPendingWork == true }) {
+                fail("该项目插件仍有任务，未关闭会话。"); return
+            }
+        }
+        let running = conversations.filter { $0.view.hasRunningAgentForProjectMutation }
+        let group = DispatchGroup()
+        var failures: [String] = []
+        for item in running {
+            group.enter()
+            let boardDraft = item.view === item.host.activeConversation ? item.host.whiteboardView.draftText : item.host.boardDrafts[item.view.workspaceKey] ?? ""
+            item.view.closeIdleAgentForProjectMutation(boardDraft: boardDraft, timeout: timeout) { result in
+                if case .failure(let error) = result { failures.append(error.localizedDescription) }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            if !failures.isEmpty { fail(failures.joined(separator: "\n")); return }
+            guard !PiRPC.hasRunningAgent(inProject: source), conversations.allSatisfy({ !$0.view.blocksProjectMutation }) else {
+                fail("仍有独立 Agent 或新任务，未迁移。请正常关闭相关底栏/会话，必要时正常退出并重开 F；没有强杀任何进程。"); return
+            }
+            completion(.success(()))
+        }
+    }
+
+    private func handleProjectCommand(_ source: URL, command: String) {
+        if command == "delete" {
+            let alert = NSAlert()
+            alert.messageText = "从项目列表移除？"
+            alert.informativeText = "只隐藏入口，保留文件夹、历史会话、画板及插件数据。再次显式打开此文件夹即可恢复。"
+            alert.addButton(withTitle: "移除入口"); alert.addButton(withTitle: "取消")
+            if alert.runModal() == .alertFirstButtonReturn { ProjectStore.hide(source); chatView.reload(busySessions: busySessionPaths) }
+            return
+        }
+        guard command == "rename" else { return }
+        if let reason = projectMutationBlockReason(source) {
+            let related = mutationConversations(source)
+            let maintenanceRoot = "/Users/fanfy/Desktop/fy/F"
+            let canOfferClose = !ProjectMutation.contains(source.path, in: maintenanceRoot) &&
+                !ProjectMutation.contains(maintenanceRoot, in: source.path) &&
+                related.contains(where: { $0.view.hasRunningAgentForProjectMutation }) &&
+                related.allSatisfy { $0.view.canCloseIdleAgentForProjectMutation }
+            guard canOfferClose else {
+                presentProjectMutationError(reason + "\n请完成任务/处理暂停队列，关闭相关底栏标签；空闲 RPC 可在此重试后选择关闭。无法回收时请正常退出并重开 F。")
+                return
+            }
+            let close = NSAlert()
+            close.messageText = "项目会话尚未关闭"
+            close.informativeText = reason + "\n可先保存会话、模型与草稿，只关闭输入并等待空闲会话自然退出；超时保留状态，不会强杀进程。"
+            close.addButton(withTitle: "关闭此项目空闲会话"); close.addButton(withTitle: "取消")
+            if close.runModal() == .alertFirstButtonReturn {
+                closeIdleProjectConversations(source) { [weak self] result in
+                    switch result {
+                    case .success: self?.handleProjectCommand(source, command: "rename")
+                    case .failure(let error): self?.presentProjectMutationError(error.localizedDescription)
+                    }
+                }
+            }
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "重命名项目文件夹"
+        alert.informativeText = "同步实际文件夹与会话、画板数据；目标已存在或存在活动任务时不会迁移。"
+        let field = NSTextField(string: source.lastPathComponent)
+        field.frame = NSRect(x: 0, y: 0, width: 340, height: 24)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "取消")
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        renameProject(source, name: field.stringValue) { [weak self] result in
+            if case .failure(let error) = result { self?.presentProjectMutationError(error.localizedDescription) }
+        }
+    }
+
+    private func presentProjectMutationError(_ message: String) {
+        let alert = NSAlert(); alert.messageText = "项目未迁移"; alert.informativeText = message
+        alert.runModal()
+    }
+
+    /// Flush before acquiring the filesystem transaction lock, then recheck the idle gate.
+    /// The transaction is synchronous on the main actor so no UI action can start a target RPC
+    /// between the final check, disk commit and in-memory rebinding.
+    func renameProject(_ source: URL, name: String, completion: @escaping (Result<URL, Error>) -> Void) {
+        func blocked(_ reason: String) { completion(.failure(ProjectMutation.Failure(message: reason))) }
+        if let reason = projectMutationBlockReason(source) { blocked(reason); return }
+        do { _ = try ProjectMutation.validate(source, name: name) } catch { completion(.failure(error)); return }
+        let affectedHosts = Self.mutationHosts.allObjects.filter { host in
+            ProjectMutation.contains(host.projectURL.path, in: source.path)
+        }
+        for host in affectedHosts {
+            guard host.flushFileEdits() else { blocked("该项目文件编辑尚未保存，未迁移。"); return }
+        }
+        projectMutationBusy = true
+        projectMutationGeneration += 1
+        let generation = projectMutationGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+            guard let self, self.projectMutationGeneration == generation, self.projectMutationBusy else { return }
+            self.projectMutationBusy = false
+            self.projectMutationGeneration += 1 // A late flush callback must never commit a cancelled rename.
+            blocked("等待画板保存超时，未迁移。请确认保存成功后重试。")
+        }
+        let flushed = DispatchGroup()
+        for host in affectedHosts {
+            flushed.enter()
+            host.whiteboardView.flushCurrentScene { flushed.leave() }
+        }
+        flushed.notify(queue: .main) { [weak self] in
+            guard let self, self.projectMutationGeneration == generation, self.projectMutationBusy else { return }
+            self.projectMutationBusy = false
+            if let reason = self.projectMutationBlockReason(source) { blocked(reason); return }
+            do {
+                var environment = ProjectMutation.Environment()
+                environment.additionalSessions = Self.mutationHosts.allObjects.flatMap { host in
+                    host.conversations.values.compactMap { $0.sessionPath.map { URL(fileURLWithPath: $0) } }
+                }
+                let target = try ProjectMutation.rename(source, name: name, environment: environment)
+                for host in Self.mutationHosts.allObjects { host.applyProjectRelocation(from: source, to: target) }
+                completion(.success(target))
+            } catch { completion(.failure(error)) }
+        }
+    }
+
+    private func applyProjectRelocation(from source: URL, to target: URL) {
+        for view in conversations.values { view.relocateProject(from: source, to: target) }
+        conversations = Dictionary(uniqueKeysWithValues: conversations.values.map { ($0.workspaceKey, $0) })
+        lastProjectConversations = Dictionary(uniqueKeysWithValues: lastProjectConversations.map {
+            (ProjectMutation.remap($0.key, from: source, to: target), $0.value)
+        })
+        if ProjectMutation.contains(projectURL.path, in: source.path) {
+            setProject(URL(fileURLWithPath: ProjectMutation.remap(projectURL.path, from: source, to: target)))
+        }
+        chatView.reload(busySessions: busySessionPaths)
     }
 
     // MARK: 多项目并行
@@ -482,7 +724,7 @@ final class RootView: NSView {
             self.chatView.selectProject(self.activeProjectURL, session: self.activeConversation.sessionPath)
         }
         view.onAgentActivity = { [weak self, weak view] text, busy in
-            guard let self else { return }
+            guard let self, let view else { return }
             if self.pendingBoardStorageReload, self.conversations.values.allSatisfy({ !$0.isProcessing }) {
                 self.pendingBoardStorageReload = false
                 self.whiteboardView.reloadFromStorage()
@@ -527,8 +769,10 @@ final class RootView: NSView {
         activeConversation = view
         lastProjectConversations[view.projectPath] = view.workspaceKey
         mode = .conversation
+        overlayDock.reset()
         for plugin in plugins.plugins where plugin.placement == .workspace {
             plugin.view.isHidden = true
+            plugin.toolbarView?.isHidden = true
             plugin.deactivate()
         }
         for other in conversations.values where other !== view { other.isHidden = true }
@@ -554,6 +798,7 @@ final class RootView: NSView {
     /// 新建项目：当前项目还在跑时照样可以开另一个项目，各跑各的 Agent。
     private func openProject(_ url: URL) {
         guard flushFileEdits() else { return }
+        ProjectStore.reopen(url)
         let view = conversation(for: url, fresh: true)
         activateConversation(view)
         setProject(url)
@@ -709,7 +954,15 @@ final class RootView: NSView {
     }
 
     /// 停靠区默认右小左大，但允许拖到一半以上。
-    private func panelWidth(_ value: CGFloat) -> CGFloat { clampWidth(value) }
+    private func panelWidth(_ value: CGFloat) -> CGFloat {
+        let width = clampWidth(value)
+        guard case .application(let id) = mode, plugins.plugin(id)?.toolbarView != nil else { return width }
+        // Keep navigation and search usable without replacing the preferred panel widths.
+        let total = (leftOpen ? clampWidth(leftWidth) : 0) + (rightOpen ? clampWidth(rightWidth) : 0)
+        let corners: CGFloat = (leftOpen ? 0 : 84) + (rightOpen ? 0 : 84)
+        let available = max(0, bounds.width - corners - 200)
+        return total > available ? width * available / total : width
+    }
 
     private func leftInset() -> CGFloat { leftOpen ? panelWidth(leftWidth) : 0 }
     private func rightInset() -> CGFloat { rightOpen ? panelWidth(rightWidth) : 0 }
@@ -760,13 +1013,24 @@ final class RootView: NSView {
         )
     }
 
+    private func toolbarFrame(in workspace: NSRect) -> NSRect {
+        let left = max(workspace.minX, addButton.frame.maxX)
+        let right = min(workspace.maxX, bottomButton.frame.minX)
+        return NSRect(x: left, y: bounds.height - FChrome.toolbarHeight,
+                      width: max(0, right - left), height: FChrome.toolbarHeight)
+    }
+
     private func applyFrames() {
         leftPanel.frame = leftFrame()
         rightPanel.frame = rightFrame()
         bottomPanel.frame = bottomFrame()
         let workspace = conversationFrame()
         conversations.values.forEach { $0.frame = workspace }
-        for plugin in plugins.plugins where plugin.placement == .workspace { plugin.view.frame = workspace }
+        overlayDock.frame = workspace
+        for plugin in plugins.plugins where plugin.placement == .workspace {
+            plugin.view.frame = ["whiteboard", "browser"].contains(plugin.id) ? workspace : FChrome.nativeWorkspaceFrame(in: workspace)
+            plugin.toolbarView?.frame = toolbarFrame(in: workspace)
+        }
 
         let size = bottomPanel.bounds
         bottomHost.frame = NSRect(x: 10, y: 8, width: max(0, size.width - 20), height: max(0, size.height - 22))
@@ -963,7 +1227,11 @@ final class RootView: NSView {
             self.bottomPanel.animator().frame = self.bottomFrame()
             let workspace = self.conversationFrame()
             self.conversations.values.forEach { $0.animator().frame = workspace }
-            for plugin in self.plugins.plugins where plugin.placement == .workspace { plugin.view.animator().frame = workspace }
+            self.overlayDock.animator().frame = workspace
+            for plugin in self.plugins.plugins where plugin.placement == .workspace {
+                plugin.view.animator().frame = ["whiteboard", "browser"].contains(plugin.id) ? workspace : FChrome.nativeWorkspaceFrame(in: workspace)
+                plugin.toolbarView?.animator().frame = self.toolbarFrame(in: workspace)
+            }
             let size = self.bottomPanel.bounds
             self.bottomHost.animator().frame = NSRect(x: 10, y: 8, width: max(0, size.width - 20), height: max(0, size.height - 22))
         } completionHandler: { [weak self] in

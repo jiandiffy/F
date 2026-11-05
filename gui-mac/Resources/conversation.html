@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Mirrors conversation.js media allowlist; redirects cannot escape to private/untrusted hosts. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src https://arxiv.org https://*.arxiv.org https://alphaxiv.org https://assets.alphaxiv.org https://*.assets.alphaxiv.org https://paper-assets.alphaxiv.org https://*.github.io https://raw.githubusercontent.com https://i.ytimg.com https://img.youtube.com; media-src https://arxiv.org https://*.arxiv.org https://alphaxiv.org https://assets.alphaxiv.org https://*.assets.alphaxiv.org https://paper-assets.alphaxiv.org https://*.github.io https://raw.githubusercontent.com; frame-src 'none'; object-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>F</title>
 <style>
   :root {
@@ -57,33 +59,6 @@
     max-width: 82%;
     white-space: pre-wrap;
   }
-  .thinking {
-    color: #b9b9c0;
-    font-size: 12.5px;
-    line-height: 1.62;
-    white-space: pre-wrap;
-    margin: 0 0 8px;
-    padding-left: 2px;
-    max-height: calc(1.62em * 3);
-    overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(0, 0, 0, .12) transparent;
-    animation: breathe 1.6s ease-in-out infinite;
-  }
-  .thinking::-webkit-scrollbar { width: 6px; }
-  .thinking::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, .12);
-    border-radius: 3px;
-  }
-  .thinking::-webkit-scrollbar-track { background: transparent; }
-  .thinking.done { animation: none; color: #c6c6cb; }
-  html.theme-dark .thinking { color: #8f8f98; scrollbar-color: rgba(255, 255, 255, .18) transparent; }
-  html.theme-dark .thinking.done { color: #7c7c85; }
-  html.theme-dark .thinking::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .18); }
-  @keyframes breathe {
-    0%, 100% { opacity: .55; }
-    50% { opacity: 1; }
-  }
   .content > :first-child { margin-top: 0; }
   .content > :last-child { margin-bottom: 0; }
   .content p { margin: 0 0 10px; }
@@ -123,7 +98,25 @@
   table { border-collapse: collapse; margin: 0 0 12px; font-size: 13px; }
   th, td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; }
   th { background: var(--table-head); }
-  img { max-width: 100%; border-radius: 8px; }
+  img { max-width: 100%; height: auto; border-radius: 8px; }
+  .paper-media { display: block; max-width: 100%; margin: 10px 0 14px; }
+  .paper-image, .paper-player {
+    display: block; max-width: 100%; max-height: 460px; width: auto; height: auto;
+    object-fit: contain; border-radius: 8px;
+  }
+  .paper-player { width: 100%; background: #111; }
+  .media-caption, .media-source { display: block; font-size: 12px; color: var(--quote); }
+  .media-caption { margin-top: 5px; }
+  .media-caption .media-source { display: inline; }
+  .media-blocked { color: var(--quote); font-size: 12px; }
+  .media-load {
+    display: block; margin: 6px 0; padding: 9px 12px; max-width: 100%;
+    color: var(--fg); background: var(--bubble); border: 1px solid var(--border);
+    border-radius: 8px; font: inherit; cursor: pointer; white-space: normal; text-align: left;
+  }
+  .media-load:focus-visible { outline: 2px solid var(--quote); outline-offset: 2px; }
+  th[align="center"], td[align="center"] { text-align: center; }
+  th[align="right"], td[align="right"] { text-align: right; }
   .error { color: #e08b84; font-size: 13px; }
   /* 额度用尽：淡灰色、居中、可换行的提示 */
   .notice {

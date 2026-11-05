@@ -21,8 +21,14 @@ def reply(command, data=None):
     emit(dict(type='response', id=command['id'], success=True, data=data or {}))
 
 def settle(aborted=False, error=False):
+    failures = {'ERROR_OFFLINE': 'Network connection lost (NSURLErrorNotConnectedToInternet)',
+                'ERROR_QUOTA': '429 insufficient_quota: token balance exhausted',
+                'ERROR_CONTEXT': 'context_length_exceeded: maximum context tokens reached',
+                'ERROR_EXPIRED_TOKEN': '401 authentication token expired',
+                'ERROR_RATE_LIMIT': '429 rate_limit_exceeded',
+                'ERROR_OUTPUT_LIMIT': 'max_tokens: output token budget exhausted'}
     emit(dict(type='message_end', message=dict(role='assistant', stopReason='error' if error else 'aborted' if aborted else 'stop',
-                                             errorMessage='Mock model failure' if error else '', content=[dict(type='text', text='OK')])))
+                                             errorMessage=failures.get(active, 'Mock model failure') if error else '', content=[dict(type='text', text='OK')])))
     emit(dict(type='agent_settled'))
 
 while True:

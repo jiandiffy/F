@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "F 登录桥接",
+  "version": "1.0.0",
+  "description": "将你选定网站的登录会话同步到 F；密码和 Google 通行密钥由 Chrome 保管。",
+  "permissions": ["cookies", "nativeMessaging", "storage", "scripting", "activeTab", "alarms"],
+  "optional_host_permissions": ["https://*/*"],
+  "background": {"service_worker": "background.js", "type": "module"},
+  "action": {"default_title": "F 登录桥接", "default_popup": "popup.html"}
+}

@@ -1,6 +1,5 @@
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { SubagentManager, spawnProvider } from './manager.mjs';
-import { ChildRPC } from './rpc.mjs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { result, objectSchema, stringSchema } from '../core/kernel.mjs';
@@ -8,7 +7,7 @@ import { result, objectSchema, stringSchema } from '../core/kernel.mjs';
 export function snapshotParent(context) {
   const id = context.sessionManager.getSessionId(), file = context.sessionManager.getSessionFile();
   const branch = context.sessionManager.getBranch(), header = context.sessionManager.getHeader();
-  return { cwd: context.cwd, executionCwd: process.env.F_REMOTE_PROJECT ? (process.env.F_LOCAL_PROJECT ?? process.cwd()) : context.cwd, model: context.model && { provider: context.model.provider, id: context.model.id }, thinkingLevel: context.thinkingLevel,
+  return { cwd: context.cwd,
     sessionManager: { getSessionId: () => id, getSessionFile: () => file, getBranch: () => branch, getHeader: () => header } };
 }
 
@@ -27,16 +26,17 @@ export async function mountSubagents(ctx, options) {
           await writeFile(entry.sessionFile, [JSON.stringify({ ...parent.sessionManager.getHeader(), id: entry.childId, cwd: env.F_REMOTE_PROJECT ? cwd : entry.cwd }),
             ...prefix.map(e => JSON.stringify(e))].join('\n') + '\n', { mode: 0o600, flag: 'wx' });
         }
-        return new ChildRPC(cli, ['--session', entry.sessionFile], { cwd, env, onEvent });
+        return spawnProvider.start({ cli, entry, cwd, env, onEvent });
       },
     });
     ctx.effect(() => () => manager.dispose());
     ctx.tools.register({ name: 'subagent', label: 'Subagent',
       description: 'Start an independent managed child and return its id. spawn starts fresh; fork inherits completed turns. Completion returns to this conversation. Use for focused delegation.',
       parameters: objectSchema({ prompt: stringSchema, label: stringSchema, provider: { type: 'string', enum: ['spawn','fork'] },
-        cwd: stringSchema, model: stringSchema, model_provider: stringSchema, reasoning_effort: stringSchema,
-        maxDepth: { type: 'integer', minimum: 0, description: 'Absolute depth limit including this child, not additional nesting. Usually omit: the default 1 already prevents children spawning grandchildren. A root cannot spawn with maxDepth=0.' }, outputSchema: { type: 'object', additionalProperties: true } }, ['prompt','label']),
+        cwd: stringSchema, model: { type: 'string', enum: ['deepseek-v4.1-flash'] }, model_provider: { type: 'string', enum: ['cbi'] }, reasoning_effort: { type: 'string', enum: ['medium'] },
+        maxDepth: { type: 'integer', minimum: 0, maximum: 2, description: 'Absolute depth cap. Only the staged workflow can create grandchildren, once with at most three experiments. Grandchildren cannot delegate.' }, outputSchema: { type: 'object', additionalProperties: true } }, ['prompt','label']),
       async execute(_id, args, signal, _update, context) {
+        if (Number(process.env.F_AGENT_DEPTH ?? 0) > 0) throw new Error('Only workflow split may create grandchildren, once with at most three children');
         const parent = snapshotParent(context);
         const activation = await manager.startActivation({ provider: args.provider ?? 'spawn', label: args.label,
           request: { parent, prompt: [{ type: 'text', text: args.prompt }], cwd: args.cwd, outputSchema: args.outputSchema,
@@ -69,6 +69,6 @@ export async function mountSubagents(ctx, options) {
       await manager.drain(snapshotParent(context), context.signal);
     });
     ctx.host.on(ctx, 'session_before_switch', async () => { await manager.dispose(); });
-    ctx.systemPrompt.register('subagent', () => 'Use subagent for focused independent delegation. Results arrive as attributed completion messages. Use list_agents, send_message and interrupt_agent to manage your direct children. Children inherit the current model and execution world; default delegation depth is one. When your own work is done, end your response: the runtime waits for children before final settlement and delivers completion automatically; do not poll list_agents or sleep to wait. A child can send_message with childId=parent to relay an attributed message to its direct parent.');
+    ctx.systemPrompt.register('subagent', () => 'All managed children use cbi/deepseek-v4.1-flash with medium thinking, including proposal, experiment, simplification and testing agents. They share the main project skill catalog, datasets and enabled Cordis tools, within the inherited explicit tool allowlist. Use subagent for focused delegation; results and messages are attributed. Only an assigned workflow experimenter may use workflow split once for at most three grandchildren; grandchildren cannot delegate. End your response when your work is done: the runtime waits for owned work before settlement. A child can send_message with childId=parent to report to its parent.');
   }});
 }

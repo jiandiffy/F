@@ -4,6 +4,7 @@ import path from 'node:path';
 import { watch } from 'node:fs';
 import { randomUUID, createHash } from 'node:crypto';
 import { ChildRPC } from './rpc.mjs';
+import { childRoute, inheritedToolArgs } from './policy.mjs';
 
 /** F provider for the DSH activation contract, with Pi's persistent session format. */
 export class SubagentManager extends Service {
@@ -74,14 +75,37 @@ export class SubagentManager extends Service {
     try {
       const remote = process.env.F_REMOTE_PROJECT && JSON.parse(process.env.F_REMOTE_PROJECT);
       const origin = remote?.cwd ?? parent.cwd;
-      const cwd = entry?.cwd ?? path.resolve(origin, request.cwd ?? '.');
-      const route = entry?.agentOptions ?? { provider: parent.model?.provider, model: parent.model?.id, reasoningEffort: parent.thinkingLevel,
-        ...request.agentOptions };
+      const cwd = request.execution && request.cwd ? path.resolve(origin, request.cwd) : entry?.cwd ?? path.resolve(origin, request.cwd ?? '.');
+      const route = childRoute(request.agentOptions);
       const directory = this.directory(parent);
       await mkdir(directory, { recursive: true, mode: 0o700 });
       entry ??= { childId: id, provider, label: label ?? 'subagent', cwd, depth, agentOptions: route,
         sessionFile: path.join(directory, id + '.jsonl') };
+      entry.agentOptions = route;
+      entry.cwd = cwd;
+      if (request.execution) entry.execution = request.execution;
+      if (childId && entry.execution) {
+        const saved = await readFile(entry.sessionFile,'utf8').catch(error => { if(error.code !== 'ENOENT')throw error;return null; });
+        if (saved) {
+          const end=saved.indexOf('\n'),header=JSON.parse(end<0?saved:saved.slice(0,end));
+          if (header.type !== 'session') throw new Error('Cannot relocate a child session without its original header');
+          if (header.cwd !== cwd) {
+            const temporary=entry.sessionFile+'.'+randomUUID()+'.tmp';
+            await writeFile(temporary,JSON.stringify({...header,cwd})+(end<0?'\n':saved.slice(end)),{mode:0o600});
+            await rename(temporary,entry.sessionFile);
+          }
+        }
+      }
       const env = { ...process.env, F_AGENT_DEPTH: String(entry.depth), F_PARENT_AGENT_ID: parent.sessionManager.getSessionId(), F_AGENT_ID: id };
+      env.F_SHARED_PROJECT = process.env.F_SHARED_PROJECT ?? origin;
+      env.F_INHERITED_TOOL_ARGS = JSON.stringify(inheritedToolArgs());
+      env.F_INHERITED_HMR = JSON.stringify(this.options.sharedPlugins?.() ?? []);
+      env.F_INHERITED_CAPABILITIES = JSON.stringify([...new Set([...(this.options.sharedCapabilities?.() ?? []),...(entry.execution?.capabilities ?? [])])]);
+      if (entry.execution) {
+        env.F_WORKFLOW_STATE_FILE = entry.execution.stateFile;
+        env.F_WORKFLOW_ROLE = entry.execution.role;
+        env.F_WORKFLOW_CANDIDATE = entry.execution.candidateId;
+      }
       // A child can never publish a self-update manifest on behalf of its root conversation.
       env.F_UPDATE_DELEGATED = '1';
       env.F_AGENT_RELAY_DIR = path.join(directory, 'relay', id);
@@ -109,13 +133,17 @@ export class SubagentManager extends Service {
       const stop = () => { void child.dispose(); };
       controller.signal.addEventListener('abort', stop, { once: true });
       controller.signal.throwIfAborted();
-      if (route.provider && route.model) await child.request('set_model', { provider: route.provider, modelId: route.model });
-      if (route.reasoningEffort) await child.request('set_thinking_level', { level: route.reasoningEffort });
+      await child.request('set_model', { provider: route.provider, modelId: route.model });
+      await child.request('set_thinking_level', { level: route.reasoningEffort });
+      const selected = await child.request('get_state');
+      if (selected.model?.provider !== route.provider || selected.model?.id !== route.model || selected.thinkingLevel !== route.reasoningEffort) throw new Error('Subagent model/thinking selection did not match the fixed child policy');
+      if (!childId) catalog.push(entry);
+      await this.persist(parent);
+      await request.started?.(id);
       const prompt = request.prompt.map(c => c.text ?? '').join('\n');
       const instructions = request.outputSchema ? `\nReturn ONLY a JSON object matching this schema: ${JSON.stringify(request.outputSchema)}` : '';
       // Attach settlement handlers before catalog I/O, including an immediate RPC rejection.
       const outcome = child.prompt(prompt + instructions).then(value => ({ value }), error => ({ error }));
-      if (!childId) { catalog.push(entry); await this.persist(parent); }
       this.ctx.emit('subagent/start', { childId: id, provider, label: entry.label });
       let disposal;
       const dispose = () => disposal ??= (async () => { controller.abort(); await child.dispose(); await result; })();
@@ -125,13 +153,19 @@ export class SubagentManager extends Service {
           if (settled.error) throw settled.error;
           value = settled.value;
           if (request.outputSchema && value.stopReason === 'completed') {
-            const text = value.output.filter(c => c.type === 'text').map(c => c.text).join('').trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
+            const text = value.output.filter(c => c.type === 'text').map(c => c.text).join('').trim();
             try {
-              const structured = JSON.parse(text);
+              let structured;
+              try { structured = JSON.parse(text); }
+              catch {
+                const blocks = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)];
+                if(blocks.length !== 1)throw new Error('Expected one structured result');
+                structured = JSON.parse(blocks[0][1]);
+              }
               const errors = validateJsonSchemaValue(request.outputSchema, structured);
               if (errors.length) throw new Error(errors.join('; '));
               value = { ...value, structured };
-            } catch { value = { ...value, stopReason: 'error', diagnostic: 'Child output did not satisfy outputSchema' }; }
+            } catch (error) { value = { ...value, stopReason: 'error', diagnostic: 'Child output did not satisfy outputSchema: '+error.message }; }
           }
         } finally {
           try { await child.dispose(); await record.closeRelay(); }
@@ -141,6 +175,7 @@ export class SubagentManager extends Service {
             controller.signal.removeEventListener('abort', stop);
           }
         }
+        value = { ...value, model: { ...route } };
         this.ctx.emit('subagent/end', { childId: id, ...value });
         if (delivery === 'parent' && (record.interrupted || !controller.signal.aborted)) this.options.deliver(parent, id, value);
         return value;
@@ -172,13 +207,12 @@ export class SubagentManager extends Service {
     if (record) { record.interrupted = true; record.controller.abort(); await record.ready; await record.child?.dispose(); await record.result; }
   }
   async drain(parent, signal) {
-    const abort = () => { for (const r of this.active.values()) if (r.parent.sessionManager.getSessionId() === parent.sessionManager.getSessionId()) r.controller.abort(); };
+    const sessionId = parent.sessionManager.getSessionId(), owned = () => [...this.active.values()].filter(r => r.parent.sessionManager.getSessionId() === sessionId);
+    const abort = () => { for (const r of owned()) r.controller.abort(); };
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
     try {
-    while ([...this.active.values()].some(r => r.parent.sessionManager.getSessionId() === parent.sessionManager.getSessionId())) {
-      await Promise.all([...this.active.values()].filter(r => r.parent.sessionManager.getSessionId() === parent.sessionManager.getSessionId()).map(async r => { await r.ready; return r.result; }));
-    }
+      while (owned().length) await Promise.all(owned().map(async r => { await r.ready; return r.result; }));
     } finally { signal?.removeEventListener('abort', abort); }
   }
   async dispose() {
@@ -189,5 +223,5 @@ export class SubagentManager extends Service {
 
 export const spawnProvider = { name: 'spawn', capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, agentPreset: false },
   inheritsParentContext: false,
-  start({ cli, entry, cwd, env, onEvent }) { return new ChildRPC(cli, ['--session', entry.sessionFile], { cwd, env, onEvent }); },
+  start({ cli, entry, cwd, env, onEvent }) { return new ChildRPC(cli, ['--session', entry.sessionFile, '--provider', entry.agentOptions.provider, '--model', entry.agentOptions.model, '--thinking', entry.agentOptions.reasoningEffort, ...JSON.parse(env.F_INHERITED_TOOL_ARGS ?? '[]')], { cwd, env, onEvent }); },
 };

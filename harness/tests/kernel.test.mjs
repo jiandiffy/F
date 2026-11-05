@@ -29,9 +29,10 @@ test('upstream Cordis dependency suspension, remount and reverse disposal', asyn
 
 test('F composition exposes plugin capabilities and bus, and unloads all subscriptions', async () => {
   const pi=fakePi(),ctx=await startHarness(pi,{dataRoot:'/tmp/f-harness-test'});
-  assert.deepEqual([...pi.tools.keys()],['skill','subagent','list_agents','send_message','interrupt_agent','workflow','workflow_control','dataset','project_version','bus','resource_scope','goal_flow']);
-  assert.ok(ctx.skills && ctx.subagents && ctx.workflowEngine);
-  await ctx.fiber.dispose();
+  try {
+    assert.deepEqual([...pi.tools.keys()],['skill','subagent','list_agents','send_message','interrupt_agent','workflow','workflow_control','dataset','project_version','gmail','browser','bus','resource_scope','goal_flow']);
+    assert.ok(ctx.skills && ctx.subagents && ctx.workflowEngine);
+  } finally { await ctx.fiber.dispose(); }
   assert.equal(ctx.skills,undefined);assert.equal(ctx.subagents,undefined);
   assert.equal([...pi.listeners.values()].reduce((n,s)=>n+s.size,0),0);
   await assert.rejects(async () => pi.tools.get('list_agents').execute('',{},undefined,undefined,{}),/unloaded/);
@@ -61,7 +62,7 @@ test('skills: project rank, strict invocation policy, live body, add/delete and 
 });
 
 test('persisted capability switches remove schemas and dependency consumers', async () => {
-  const old=process.env.F_DISABLED_PLUGINS;process.env.F_DISABLED_PLUGINS='skills,subagent,datasets,versions,aios';
+  const old=process.env.F_DISABLED_PLUGINS;process.env.F_DISABLED_PLUGINS='skills,subagent,datasets,versions,aios,gmail,browser';
   let ctx;
   try {const pi=fakePi();ctx=await startHarness(pi);assert.deepEqual([...pi.tools.keys()],['bus','resource_scope']);assert.equal(ctx.subagents,undefined);assert.equal(ctx.workflowEngine,undefined);assert.ok(ctx.skills);}
   finally {await ctx?.fiber.dispose();if(old===undefined)delete process.env.F_DISABLED_PLUGINS;else process.env.F_DISABLED_PLUGINS=old;}

@@ -11,6 +11,7 @@ import "./style.css";
 import { Toolbar } from "./toolbar.jsx";
 import { CanvasFooter } from "./footer.jsx";
 import { ExportPanel } from "./exportPanel.jsx";
+import { validViewport, viewportFromAppState, viewportAppState } from "./viewport.js";
 
 const DEFAULT_FONT_FAMILY = 5; // Excalifont; Chinese glyphs use the official Xiaolai fallback.
 const SAVED_APP_STATE_KEYS = [
@@ -26,18 +27,11 @@ const SAVED_APP_STATE_KEYS = [
   "currentItemRoughness",
   "currentItemOpacity",
   "currentItemTextAlign",
-  // 视角也要保存，重新打开项目时回到上次的位置
-  "scrollX",
-  "scrollY",
-  "zoom",
 ];
 
 function bridge(message) {
-  try {
-    window.webkit?.messageHandlers?.fwb?.postMessage(message);
-  } catch {
-    // Running the web app in a normal browser is useful for development.
-  }
+  // Missing WebKit is normal in a browser; a present bridge failing is not.
+  window.webkit?.messageHandlers?.fwb?.postMessage(message);
 }
 
 function appStateSnapshot(appState) {
@@ -84,6 +78,11 @@ function App() {
   const documentIDRef = useRef(null);
   const baselineIDRef = useRef(null);
   const loadGenerationRef = useRef(0);
+  const conversationIDRef = useRef(null);
+  const viewGenerationRef = useRef(null);
+  const viewportRef = useRef(null);
+  const viewportSizeRef = useRef(null);
+  const lastSentViewportRef = useRef("");
 
   const [theme, setTheme] = useState("light");
   const [exportOpen, setExportOpen] = useState(false);
@@ -107,9 +106,16 @@ function App() {
       const files = api.getFiles();
       const scene = makeScene(elements, appState, files);
       const signature = sceneSignature(scene);
-      if (signature === lastSentRef.current) return;
+      const viewport = viewportFromAppState(appState);
+      const viewportSignature = JSON.stringify(viewport);
+      const sceneChanged = signature !== lastSentRef.current;
+      if (!sceneChanged && viewportSignature === lastSentViewportRef.current) return;
       lastSentRef.current = signature;
-      if (documentIDRef.current) bridge({ type: "change", documentID: documentIDRef.current, baselineID: baselineIDRef.current, scene: JSON.stringify(scene) });
+      lastSentViewportRef.current = viewportSignature;
+      if (documentIDRef.current) bridge({ type: sceneChanged ? "change" : "viewport",
+        documentID: documentIDRef.current, baselineID: baselineIDRef.current,
+        conversationID: conversationIDRef.current, viewGeneration: viewGenerationRef.current,
+        viewport, ...(sceneChanged ? { scene: JSON.stringify(scene) } : {}) });
     }, 180);
   }, []);
 
@@ -118,6 +124,18 @@ function App() {
       setActiveTool((previous) => previous === appState.activeTool.type ? previous : appState.activeTool.type);
       setLibraryOpen(appState.openSidebar?.name === "default" && appState.openSidebar?.tab === "library");
       setZoom(appState.zoom.value);
+      const size = { width: appState.width, height: appState.height };
+      const previousSize = viewportSizeRef.current;
+      viewportSizeRef.current = size;
+      if (viewportRef.current && previousSize &&
+          (size.width !== previousSize.width || size.height !== previousSize.height)) {
+        const resized = viewportAppState(viewportRef.current, appState);
+        if (resized) {
+          apiRef.current?.updateScene({ appState: resized, captureUpdate: CaptureUpdateAction.NEVER });
+          return;
+        }
+      }
+      viewportRef.current = viewportFromAppState(appState) || viewportRef.current;
       if (!loadedRef.current || performance.now() < applyingUntilRef.current) return;
       scheduleSave();
     },
@@ -134,7 +152,10 @@ function App() {
         api.getAppState(),
         api.getFiles(),
       );
-      if (documentIDRef.current) bridge({ type: "change", documentID: documentIDRef.current, baselineID: baselineIDRef.current, scene: JSON.stringify(scene) });
+      if (documentIDRef.current) bridge({ type: "change", documentID: documentIDRef.current,
+        baselineID: baselineIDRef.current, conversationID: conversationIDRef.current,
+        viewGeneration: viewGenerationRef.current, viewport: viewportFromAppState(api.getAppState()),
+        scene: JSON.stringify(scene) });
     };
     window.addEventListener("pagehide", flush);
     window.addEventListener("beforeunload", flush);
@@ -144,7 +165,7 @@ function App() {
     };
   }, []);
 
-  const fit = useCallback(() => {
+  const fit = useCallback((animate = true) => {
     const api = apiRef.current;
     if (!api) return;
     const elements = api.getSceneElements();
@@ -152,7 +173,7 @@ function App() {
     api.scrollToContent(elements, {
       fitToContent: true,
       viewportZoomFactor: 0.84,
-      animate: true,
+      animate: Boolean(animate),
       duration: 260,
     });
   }, []);
@@ -193,10 +214,21 @@ function App() {
       }
       if (!Array.isArray(data.elements)) return;
       const documentID = options.documentID ?? documentIDRef.current;
+      // Legacy callers replace the current scene without passing view identity.
+      // Inherit only within the same document; explicit null still clears identity.
+      const sameDocument = documentID === documentIDRef.current;
+      const conversationID = options.conversationID !== undefined ? options.conversationID
+        : sameDocument ? conversationIDRef.current : null;
+      const viewGeneration = options.viewGeneration !== undefined ? options.viewGeneration
+        : sameDocument ? viewGenerationRef.current : null;
+      if (Number.isInteger(viewGeneration) && Number.isInteger(viewGenerationRef.current) &&
+          viewGeneration < viewGenerationRef.current) return;
+      const sameView = documentID === documentIDRef.current &&
+        conversationID === conversationIDRef.current && viewGeneration === viewGenerationRef.current;
       // Native polling can arrive before the 180ms save debounce, or while a
       // bridge message is still in flight. Preserve those edits through the
       // native three-way writer before accepting the newer disk snapshot.
-      if (options.baselineID && documentID === documentIDRef.current && loadedRef.current) {
+      if (options.baselineID && sameView && loadedRef.current) {
         const localScene = makeScene(api.getSceneElementsIncludingDeleted(), api.getAppState(), api.getFiles());
         const signature = sceneSignature(localScene);
         if (signature !== lastAcknowledgedRef.current) {
@@ -204,6 +236,7 @@ function App() {
           saveTimerRef.current = null;
           lastSentRef.current = signature;
           bridge({ type: "change", documentID, baselineID: baselineIDRef.current,
+            conversationID, viewGeneration, viewport: viewportFromAppState(api.getAppState()),
             scene: JSON.stringify(localScene), reloadAfterSave: true });
           return;
         }
@@ -215,6 +248,21 @@ function App() {
       applyingUntilRef.current = performance.now() + 700;
       const generation = ++loadGenerationRef.current;
 
+      // Polling and merged reloads preserve the current view. A new conversation
+      // prefers its private center, then usable legacy scene offsets, then fit.
+      const currentState = api.getAppState();
+      const preservedViewport = sameView && options.fit === false
+        ? viewportRef.current || viewportFromAppState(currentState) : null;
+      const privateViewport = validViewport(options.viewport) ? options.viewport : null;
+      const targetViewport = preservedViewport || privateViewport;
+      const targetAppState = viewportAppState(targetViewport, currentState);
+      const legacyViewport = Number.isFinite(data.appState?.scrollX) &&
+        Number.isFinite(data.appState?.scrollY) && Number.isFinite(data.appState?.zoom?.value) &&
+        data.appState.zoom.value >= 0.1 && data.appState.zoom.value <= 30;
+      const sceneAppState = { ...(data.appState || {}) };
+      if (!legacyViewport) {
+        delete sceneAppState.scrollX; delete sceneAppState.scrollY; delete sceneAppState.zoom;
+      }
       const local = {
         theme: themeRef.current,
         viewBackgroundColor: "transparent",
@@ -224,8 +272,8 @@ function App() {
       try {
         restored = restore(
           {
-            elements: Array.isArray(data.elements) ? data.elements : [],
-            appState: { ...(data.appState || {}), theme: themeRef.current },
+            elements: data.elements,
+            appState: { ...sceneAppState, theme: themeRef.current },
             files: data.files || {},
           },
           local,
@@ -240,10 +288,13 @@ function App() {
       // A project's undo stack and cached images must never restore another project's scene.
       if (documentID !== documentIDRef.current) api.resetScene();
       if (restored.files) api.addFiles(Object.values(restored.files));
+      const appliedAppState = { ...restored.appState, ...(targetAppState || {}) };
+      viewportSizeRef.current = { width: currentState.width, height: currentState.height };
+      viewportRef.current = targetViewport || viewportFromAppState({ ...currentState, ...appliedAppState });
       api.updateScene({
         elements: restored.elements,
         appState: {
-          ...restored.appState,
+          ...appliedAppState,
           theme: themeRef.current,
           viewBackgroundColor: "transparent",
           currentItemFontFamily: DEFAULT_FONT_FAMILY,
@@ -251,30 +302,33 @@ function App() {
         captureUpdate: CaptureUpdateAction.NEVER,
       });
       documentIDRef.current = documentID;
-      baselineIDRef.current = options.baselineID ?? null;
+      conversationIDRef.current = conversationID;
+      viewGenerationRef.current = viewGeneration;
+      // Persist a legacy/default viewport into this conversation after the load.
+      lastSentViewportRef.current = "";
+      baselineIDRef.current = options.baselineID !== undefined ? options.baselineID
+        : sameView ? baselineIDRef.current : null;
 
       const scene = makeScene(restored.elements, restored.appState, restored.files);
       lastSentRef.current = sceneSignature(scene);
       lastAcknowledgedRef.current = lastSentRef.current;
       const count = restored.elements.filter((element) => !element.isDeleted).length;
-      // 存过视角就直接用存档的视口（滚动/缩放），否则才自适应内容。
-      const savedViewport =
-        typeof data.appState?.scrollX === "number" &&
-        typeof data.appState?.scrollY === "number" &&
-        typeof data.appState?.zoom?.value === "number";
+      const savedViewport = Boolean(targetViewport || legacyViewport);
 
       window.setTimeout(() => {
         if (generation !== loadGenerationRef.current) return;
         loadedRef.current = true;
         applyingUntilRef.current = 0;
+        scheduleSave();
         if (options.fit !== false && count > 0 && !savedViewport) {
           window.setTimeout(() => {
-            if (generation === loadGenerationRef.current) fit();
+            // No animation may continue moving a subsequently selected conversation.
+            if (generation === loadGenerationRef.current) fit(false);
           }, 80);
         }
       }, 160);
     },
-    [fit],
+    [fit, scheduleSave],
   );
 
   useEffect(() => {
@@ -320,7 +374,9 @@ function App() {
       setBusy: (value, message) => setStatus(message || (value ? "F 正在处理…" : ""), value),
       getScene: () => (apiRef.current ? apiRef.current.getSceneElements() : []),
       getDocumentSnapshot: () => loadedRef.current
-        ? { documentID: documentIDRef.current, baselineID: baselineIDRef.current, scene: window.FWB.getSceneJSON() }
+        ? { documentID: documentIDRef.current, baselineID: baselineIDRef.current,
+            conversationID: conversationIDRef.current, viewGeneration: viewGenerationRef.current,
+            viewport: viewportFromAppState(apiRef.current?.getAppState()), scene: window.FWB.getSceneJSON() }
         : null,
       getSceneJSON: () =>
         apiRef.current && loadedRef.current
