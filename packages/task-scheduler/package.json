@@ -1,0 +1,11 @@
+{
+  "name": "@f/task-scheduler",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "task-scheduler",
+    "entries": {
+      "agent": "packages/task-scheduler/agent"
+    }
+  }
+}

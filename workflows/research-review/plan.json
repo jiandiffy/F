@@ -1,0 +1,22 @@
+{
+  "id": "research-review",
+  "title": "研究评审",
+  "objective": "研究评审",
+  "children": [
+    {
+      "id": "research-review-1",
+      "title": "收集一手证据并标注来源",
+      "objective": "收集一手证据并标注来源"
+    },
+    {
+      "id": "research-review-2",
+      "title": "复核方法与结论",
+      "objective": "复核方法与结论"
+    },
+    {
+      "id": "research-review-3",
+      "title": "提交证据支持的评审报告",
+      "objective": "提交证据支持的评审报告"
+    }
+  ]
+}

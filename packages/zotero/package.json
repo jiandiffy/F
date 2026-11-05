@@ -1,0 +1,9 @@
+{
+  "name": "@f/zotero",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "zotero",
+    "entries": {}
+  }
+}

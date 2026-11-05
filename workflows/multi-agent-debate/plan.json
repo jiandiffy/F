@@ -1,0 +1,22 @@
+{
+  "id": "multi-agent-debate",
+  "title": "多 Agent 讨论",
+  "objective": "多 Agent 讨论",
+  "children": [
+    {
+      "id": "multi-agent-debate-1",
+      "title": "提出三个不同方法",
+      "objective": "提出三个不同方法"
+    },
+    {
+      "id": "multi-agent-debate-2",
+      "title": "独立检验方法与反例",
+      "objective": "独立检验方法与反例"
+    },
+    {
+      "id": "multi-agent-debate-3",
+      "title": "比较证据并汇总结论",
+      "objective": "比较证据并汇总结论"
+    }
+  ]
+}

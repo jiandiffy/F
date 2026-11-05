@@ -1,0 +1,12 @@
+{
+  "name": "@f/daily-papers",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "daily-papers",
+    "entries": {
+      "agent": "packages/daily-papers/agent",
+      "desktop": "packages/daily-papers/desktop"
+    }
+  }
+}

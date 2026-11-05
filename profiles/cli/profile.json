@@ -1,0 +1,5 @@
+{
+  "id": "cli",
+  "extends": "base",
+  "disabled": []
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@f/agent-bus",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "agent-bus",
+    "entries": {
+      "agent": "packages/agent-bus/agent"
+    }
+  }
+}

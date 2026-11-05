@@ -1,0 +1,22 @@
+{
+  "id": "code-development",
+  "title": "代码开发",
+  "objective": "代码开发",
+  "children": [
+    {
+      "id": "code-development-1",
+      "title": "定位已有实现与失败输入",
+      "objective": "定位已有实现与失败输入"
+    },
+    {
+      "id": "code-development-2",
+      "title": "实现和最小修复",
+      "objective": "实现和最小修复"
+    },
+    {
+      "id": "code-development-3",
+      "title": "独立精简、回归与系统验收",
+      "objective": "独立精简、回归与系统验收"
+    }
+  ]
+}

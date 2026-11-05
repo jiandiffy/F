@@ -1,0 +1,12 @@
+{
+  "name": "@f/excalidraw",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "excalidraw",
+    "entries": {
+      "desktop": "packages/excalidraw/desktop",
+      "web": "packages/excalidraw/web"
+    }
+  }
+}

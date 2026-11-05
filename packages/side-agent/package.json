@@ -1,0 +1,12 @@
+{
+  "name": "@f/side-agent",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "side-agent",
+    "entries": {
+      "agent": "packages/side-agent/agent",
+      "desktop": "packages/side-agent/desktop"
+    }
+  }
+}

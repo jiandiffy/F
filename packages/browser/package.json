@@ -1,0 +1,11 @@
+{
+  "name": "@f/browser",
+  "private": true,
+  "type": "module",
+  "f": {
+    "id": "browser",
+    "entries": {
+      "desktop": "packages/browser/desktop"
+    }
+  }
+}

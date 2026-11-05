@@ -1,0 +1,22 @@
+{
+  "id": "main-agent",
+  "title": "主 Agent",
+  "objective": "主 Agent",
+  "children": [
+    {
+      "id": "main-agent-1",
+      "title": "澄清目标和验收范围",
+      "objective": "澄清目标和验收范围"
+    },
+    {
+      "id": "main-agent-2",
+      "title": "调用所需插件完成任务",
+      "objective": "调用所需插件完成任务"
+    },
+    {
+      "id": "main-agent-3",
+      "title": "精简并测试结果",
+      "objective": "精简并测试结果"
+    }
+  ]
+}
