@@ -50,7 +50,7 @@ The smallest mount that works, as a `cordis.yml` snippet, plus the config table:
 |---|---|---|
 | `<field>` | `<default>` or `required` | One-line meaning |
 
-The generated [configuration catalog](../../vendor/deepseek-harness/docs/config-catalog.md#deepseek-aidsh-<name>) is the exhaustive source for every accepted field.
+The generated [configuration catalog](../upstream/docs/config-catalog.md#deepseek-aidsh-<name>) is the exhaustive source for every accepted field.
 
 -----
 

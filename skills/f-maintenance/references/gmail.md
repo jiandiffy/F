@@ -46,7 +46,7 @@ Agent 通过总线启用 `gmail` 能力，使用 `gmail` 工具的 `status/searc
 ## 验证
 
 ```sh
-runtime/pi/runtime/node/bin/node --test runtime/harness/tests/gmail.test.mjs
+runtime/node/bin/node --test runtime/harness/tests/gmail.test.mjs
 python3 ui/desktop/tests/run-gmail-tests.py
 ```
 

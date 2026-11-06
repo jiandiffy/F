@@ -18,4 +18,8 @@ for (const name of skills) {
 for (const name of ['main-agent', 'research-review', 'multi-agent-debate', 'code-development']) assert.equal(JSON.parse(await readFile(path.join(root, 'workflows', name, 'plan.json'), 'utf8')).id, name);
 assert.equal(await realpath(path.join(root, 'ui/web')), path.join(root, 'packages/excalidraw/web'));
 assert.equal(await realpath(path.join(root, 'ui/desktop/Plugins/Whiteboard')), path.join(root, 'packages/excalidraw/desktop'));
+for (const removed of ['vendor/deepseek-harness', 'vendor/cursor-plugins', 'runtime/harness/upstream']) {
+  await assert.rejects(stat(path.join(root, removed)), { code: 'ENOENT' });
+}
+for (const entry of ['runtime/agent/bin/f', 'runtime/node/bin/node', 'vendor/cordis/SOURCE.json']) assert.ok((await stat(path.join(root, entry))).isFile());
 console.log(`PASS: ten software directories, fourteen required packages, ${skills.length} requested skills, workflows and canonical UI mappings`);

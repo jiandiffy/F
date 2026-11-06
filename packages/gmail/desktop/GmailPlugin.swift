@@ -262,8 +262,7 @@ final class GmailPlugin: NSObject, FPlugin, FProcessActivity, NSTableViewDataSou
     private func run(_ input: [String: Any], failure: (() -> Void)? = nil, completion: @escaping ([String: Any]) -> Void) {
         guard enabled, !working else { failure?(); return }
         guard let cli = PiPaths.cliPath else { showError("找不到 F 的 Node 运行时"); failure?(); return }
-        let pi = URL(fileURLWithPath: cli).deletingLastPathComponent().deletingLastPathComponent()
-        let node = pi.appendingPathComponent("runtime/node/bin/node")
+        let node = PiPaths.nodeURL(for: cli)
         guard let script = Bundle.main.resourceURL?.appendingPathComponent("runtime/harness/src/gmail/cli.mjs"), FileManager.default.fileExists(atPath: script.path) else { showError("Gmail 运行资源缺失，请重新安装 F 更新"); failure?(); return }
         let task = Process(), stdin = Pipe(), stdout = Pipe()
         task.executableURL = node; task.arguments = ["--use-env-proxy", script.path]

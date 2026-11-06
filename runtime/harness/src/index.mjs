@@ -23,7 +23,7 @@ export async function startHarness(pi, { adapters = [], root = path.resolve(path
   const disabled = new Set([...profile.disabled, ...(process.env.F_DISABLED_PLUGINS ?? '').split(',')]);
   await mountSkills(ctx, { root, enabled: !disabled.has('skills') });
   await mountWorkspaces(ctx, { directory: dataRoot && path.join(dataRoot, 'workspaces') });
-  if (!disabled.has('subagent')) await mountSubagents(ctx, { cli: path.join(root, 'runtime/pi/bin/pi'), dataRoot: directory, maxDepth: 2, maxConcurrentAgents: 4,
+  if (!disabled.has('subagent')) await mountSubagents(ctx, { cli: path.join(root, 'runtime/agent/bin/f'), dataRoot: directory, maxDepth: 2, maxConcurrentAgents: 4,
     sharedPlugins: () => (ctx.get('pluginHmr')?.status() ?? []).filter(p=>p.state==='active').map(({id,path,sha256})=>({id,path,sha256})),
     sharedCapabilities: () => (ctx.get('bus')?.catalog() ?? []).filter(c=>c.name!=='core' && c.tools.some(name=>ctx.get('bus').isActive(name))).map(c=>c.name),
     deliverMessage(parent, childId, text) {

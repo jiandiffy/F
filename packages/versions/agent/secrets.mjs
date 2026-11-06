@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-export const privatePath = file => /(^|\/)(?:\.git|\.f|node_modules|\.build|__pycache__|\.env(?:\.[^/]*)?|auth\.json|credentials[^/]*|.*api[-_]key.*|id_(?:rsa|ed25519)|signing-keychain-password)(\/|$)|(?:^|\/)pi\/(?:codebuddy|runtime|cache|agent\/sessions)(\/|$)|^dsh\/deepseek-api\.md$|\.app(?:\/|$)/i.test(file);
+export const privatePath = file => /(^|\/)(?:\.git|\.f|node_modules|\.build|__pycache__|\.env(?:\.[^/]*)?|auth\.json|credentials[^/]*|.*api[-_]key.*|id_(?:rsa|ed25519)|signing-keychain-password)(\/|$)|(?:^|\/)pi\/(?:codebuddy|runtime|cache|agent\/sessions)(\/|$)|(?:^|\/)runtime\/agent\/(?:state|codebuddy|cache)(?:\/|$)|(?:^|\/)runtime\/node(?:\/|$)|^dsh\/deepseek-api\.md$|\.app(?:\/|$)/i.test(file);
 export function assertNoSecret(data, file) {
   const text = data.toString('utf8');
   if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bgh[pousr]_[A-Za-z0-9]{30,}|\bsk-[A-Za-z0-9_-]{24,}|\bAIza[A-Za-z0-9_-]{30,}|\bAKIA[A-Z0-9]{16}\b/.test(text)) throw new Error('Publication refused: credential material in ' + file);

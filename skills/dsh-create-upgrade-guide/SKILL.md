@@ -17,7 +17,7 @@ Write a guide only for breaks that someone outside the repository can observe af
 - TypeScript and Python SDK exports, JSON-RPC, HTTP, and ACP messages;
 - published package names and entry points.
 
-Pre-stable internal APIs whose consumers are all updated in the same change need no guide. A Session-format change still follows [type acknowledgements](../../vendor/deepseek-harness/docs/cookbook/reviewing-persistence-type-changes.md); its guide states only the reader's actions and links that record.
+Pre-stable internal APIs whose consumers are all updated in the same change need no guide. A Session-format change still follows [type acknowledgements](../dsh-doc/upstream/docs/cookbook/reviewing-persistence-type-changes.md); its guide states only the reader's actions and links that record.
 
 ## Location
 
@@ -43,7 +43,7 @@ Start from the [upgrade-guide template](../dsh-doc/templates/upgrade-guide.md). 
 
 When a guide needs more than 500 words, the extra text belongs elsewhere: link source files or symbols instead of restating code, move rationale into an [Agent Note](../../notes/README.md), and turn repeated mechanical steps into a script or `dsh` command that the guide invokes.
 
-Follow [dsh-prose-standard](../dsh-prose-standard/SKILL.md). Write the Chinese counterpart in the same change under the [bilingual pairing rules](../../vendor/deepseek-harness/docs/AGENTS.md), then record the pair with `pnpm run verify-translation-pairing --write docs/upgrade-guide/v<version>/<item>/guide.md`.
+Follow [dsh-prose-standard](../dsh-prose-standard/SKILL.md). Write the Chinese counterpart in the same change under the [bilingual pairing rules](../dsh-doc/upstream/docs/AGENTS.md), then record the pair with `pnpm run verify-translation-pairing --write docs/upgrade-guide/v<version>/<item>/guide.md`.
 
 ## Verify
 

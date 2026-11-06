@@ -1,0 +1,8 @@
+/state
+/agent
+/codebuddy
+/cache
+/node_modules
+/runtime
+/vendor
+*.log

@@ -1,0 +1,24 @@
+#!/bin/sh
+F_AGENT_RUNTIME="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+export PI_CODING_AGENT_DIR="${PI_CODING_AGENT_DIR:-${F_USER_DATA_DIRECTORY:-$HOME/Library/Application Support/F}/agent}"
+mkdir -p "$PI_CODING_AGENT_DIR"
+export PATH="$F_AGENT_RUNTIME/bin:$F_AGENT_RUNTIME/../node/bin:$F_AGENT_RUNTIME/node_modules/.bin:$PATH"
+# Match the active macOS HTTPS proxy when no explicit terminal proxy is set.
+if [ -z "${HTTPS_PROXY:-}${https_proxy:-}${ALL_PROXY:-}${all_proxy:-}" ]; then
+  PI_SYSTEM_PROXY=$(/usr/sbin/scutil --proxy | /usr/bin/awk '/HTTPSEnable : 1/{enabled=1} /HTTPSProxy :/{host=$3} /HTTPSPort :/{port=$3} END{if(enabled && host && port) print "http://" host ":" port}')
+  if [ -n "$PI_SYSTEM_PROXY" ]; then
+    export HTTPS_PROXY="$PI_SYSTEM_PROXY"
+    export HTTP_PROXY="$PI_SYSTEM_PROXY"
+    export NO_PROXY="${NO_PROXY:-localhost,127.0.0.1,::1,api.deepseek.com,.deepseek.com,www.codebuddy.cn,.codebuddy.cn,copilot.tencent.com,.copilot.tencent.com,copilot.qq.com,.copilot.qq.com}"
+  fi
+fi
+export no_proxy="${NO_PROXY:-localhost,127.0.0.1,::1}"
+export npm_config_cache="$F_AGENT_RUNTIME/state/cache/npm"
+F_LOAD_COMPOSITION=1
+for arg in "$@"; do
+  case "$arg" in --no-extensions|-ne) F_LOAD_COMPOSITION=0 ;; esac
+done
+if [ "$F_LOAD_COMPOSITION" = 1 ]; then
+  set -- --extension "$F_AGENT_RUNTIME/extensions/fy-harness.ts" "$@"
+fi
+exec "$F_AGENT_RUNTIME/../node/bin/node" "$F_AGENT_RUNTIME/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" "$@"

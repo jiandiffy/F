@@ -13,7 +13,7 @@ export function validateAnalysis(value, media = []) {
 }
 export async function analyzePaper(paper, { pi, cwd, signal, timeout = 420000, rpcFactory = (...args) => new ChildRPC(...args) } = {}) {
   const root = path.dirname(path.dirname(pi));
-  const child = rpcFactory(pi, ['--no-session', '--no-tools', '--no-mcp', '--no-extensions', '-e', path.join(root, 'vendor/pi-codebuddy-sdk-cbi/src/index.ts'), '--no-skills', '--no-context-files', '--no-prompt-templates', '--provider', 'cbi', '--model', modelID, '--thinking', 'medium'], { cwd, env: { ...process.env, F_AGENT_DEPTH: '1' } });
+  const child = rpcFactory(pi, ['--no-session', '--no-tools', '--no-mcp', '--no-extensions', '-e', path.join(root, 'providers/cbi/src/index.ts'), '--no-skills', '--no-context-files', '--no-prompt-templates', '--provider', 'cbi', '--model', modelID, '--thinking', 'medium'], { cwd, env: { ...process.env, F_AGENT_DEPTH: '1' } });
   const abort = () => { void child.dispose(); };
   const timer = setTimeout(abort, timeout); signal?.addEventListener('abort', abort, { once: true });
   try {

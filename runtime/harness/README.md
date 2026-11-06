@@ -4,8 +4,8 @@ F 的 Agent 层使用 DeepSeek 官方 vendored Cordis；AppKit 载体实现相�
 现有 Pi 会话格式、模型来源、远程工具、画板工具与原生交互保留，通过适配器接入。
 
 官方基线为 [ce7073d51254c26cd63b22a60835b8f948deb447](https://github.com/deepseek-ai/deepseek-harness/commit/ce7073d51254c26cd63b22a60835b8f948deb447)，核对日期 2026-10-31。
-`upstream/SOURCE.json` 逐文件记录 Git blob 与 SHA256；`scripts/verify-upstream.py` 在构建前验证。
-签名应用只捆绑实际引用的上游代码、相邻类型与许可证。完整上游源码与文档已固定下载至 `../vendor/deepseek-harness`，供维护时查阅，不自动执行其中的应用。
+`vendor/cordis/SOURCE.json` 逐文件记录 Git blob 与 SHA256；`scripts/verify-upstream.py` 在构建前验证。
+签名应用只捆绑实际引用的上游代码、类型与许可证。完整参考仓库已删除，运行子集集中于 `vendor/cordis`，技能直接引用的说明保存在 `skills/dsh-doc/upstream`。
 
 | 层 | 服务与职责 |
 | --- | --- |
@@ -16,7 +16,7 @@ F 的 Agent 层使用 DeepSeek 官方 vendored Cordis；AppKit 载体实现相�
 | `src/subagent/` | activation、spawn/fork、持久父子目录、消息、恢复、深度/容量和取消清理 |
 | `src/workflow/` | Cordis 阶段实验服务、固定起点三分支、一次孙级拆分、独立精简测试和用户候选选择 |
 | `src/adapters/` | 已认证 SSH 文件系统与技能发现桥接 |
-| `../runtime/pi/agent/modules/` | 原有模型、远程工具与画板适配器；全部由 Cordis 作用域持有 |
+| `../runtime/agent/adapters/` | 原有模型、远程工具与画板适配器；全部由 Cordis 作用域持有 |
 | `../ui/desktop/Core/Kernel.swift` | 原生服务容器；依赖缺失暂停消费者，服务替换后重新挂载 |
 
 每条对话拥有独立 Cordis 树。服务通过稳定的 `ctx` 键查找；插件声明 `inject`；工具、事件订阅、提供方和提示词均以 effect 注册。
@@ -88,9 +88,9 @@ SDK 模型流为本地 stub，不等同付费模型验收。
 
 ```sh
 python3 runtime/harness/scripts/verify-upstream.py
-PATH="$PWD/runtime/pi/runtime/node/bin:$PATH" npm run --prefix harness build
-./runtime/pi/runtime/node/bin/node --test runtime/harness/tests/*.test.mjs
-./runtime/pi/runtime/node/bin/node runtime/harness/tests/test-cbi.mjs --report /tmp/f-cbi-report.json
+PATH="$PWD/runtime/node/bin:$PATH" npm run --prefix runtime/harness build
+./runtime/node/bin/node --test runtime/harness/tests/*.test.mjs
+./runtime/node/bin/node runtime/harness/tests/test-cbi.mjs --report /tmp/f-cbi-report.json
 ```
 
 最后一条会调用真实 cbi/deepseek-v4.1-flash，仅使用临时项目、会话和画板。

@@ -1,7 +1,0 @@
-agent/auth.json
-agent/sessions/
-codebuddy/
-cache/
-node_modules/
-runtime/
-*.log

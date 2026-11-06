@@ -34,10 +34,8 @@ enum PiHistory {
 
         let home = fm.homeDirectoryForCurrentUser.path
         candidates += [
+            "\(home)/Library/Application Support/F/agent",
             "\(home)/.pi/agent",
-            "\(home)/Desktop/fy/F/runtime/pi/agent",
-            "\(home)/runtime/pi/agent",
-            "\(home)/Developer/runtime/pi/agent",
         ]
 
         for candidate in candidates {
@@ -50,6 +48,20 @@ enum PiHistory {
             }
         }
         return nil
+    }
+
+    /// Resolve old source paths after moving session data out of the runtime.
+    static func canonicalSessionPath(_ path: String, sessionsRoot: URL? = nil) -> String {
+        let fm = FileManager.default
+        let existing = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL
+        if fm.fileExists(atPath: existing.path) { return existing.path }
+        guard let sessions = (sessionsRoot ?? agentDirectory())?.standardizedFileURL else { return path }
+        for marker in ["/pi/agent/sessions/", "/runtime/agent/agent/sessions/", "/runtime/agent/state/sessions/"] {
+            guard let range = path.range(of: marker) else { continue }
+            let candidate = sessions.appendingPathComponent(String(path[range.upperBound...])).standardizedFileURL
+            if candidate.path.hasPrefix(sessions.path + "/") { return candidate.resolvingSymlinksInPath().standardizedFileURL.path }
+        }
+        return path
     }
 
     static func load() -> [PiChat] {

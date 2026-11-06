@@ -1,0 +1,169 @@
+{
+  "repository": "https://github.com/deepseek-ai/deepseek-harness",
+  "commit": "ce7073d51254c26cd63b22a60835b8f948deb447",
+  "scope": "Only documentation directly referenced by F skills; other upstream links point to the pinned commit.",
+  "files": [
+    {
+      "path": "docs/AGENTS.md",
+      "gitBlob": "d1766b9e8098c63ae6bd1abb6a7ec750d8673283",
+      "sha256": "b2ad3d4512a470413500fe52ed85784ca7314ee9622514b2d5aeb641081bbe11",
+      "adaptedSHA256": "b05929a96d13b61315877ba3dc7fb2712dc6d162a37662e361ca98204b3240af"
+    },
+    {
+      "path": "docs/architecture.md",
+      "gitBlob": "e3f5cd24a39d1d6275a291c83f165e6839ce191b",
+      "sha256": "c329e1a9e6227475069edc19284c4eee39aff8cc77084ec962099617b1698358",
+      "adaptedSHA256": "c60b0fdfb721c1a641b4699a2fbacd7f5a00f95d99ccc9ff3b0233ec9fcfb5f8"
+    },
+    {
+      "path": "docs/config-catalog.md",
+      "gitBlob": "f0928951060e9c033bd374f38385aa59c4f6255b",
+      "sha256": "0788b48d2f80a1e283ef04052ea27a18f46cf9cb24f11d5b3dd290334ea1c557",
+      "adaptedSHA256": "80e9e99642138d6f85202e7542a5bf171a02c0c7690eeecbdf3cf1d7869a1299"
+    },
+    {
+      "path": "docs/cookbook/adding-a-package.md",
+      "gitBlob": "16fe3e564f2128a0dc54320e73c9299a5edecfa5",
+      "sha256": "47132dd37256a95b4688af0a54bf9b947ca498304ce9951152fd21c903c8fe43",
+      "adaptedSHA256": "808e32719d546bcf277cf6ebd43366368ff9ebd54cb20a1a3bc0e413396e7f75"
+    },
+    {
+      "path": "docs/cookbook/adding-a-plugin-preview.md",
+      "gitBlob": "1a2ceb9d81397a26f81c4564e81bf0696c83d430",
+      "sha256": "ff26e678c6e8746d01bbda6690ed4f62f9f0f1081643302c4409a79a14278469",
+      "adaptedSHA256": "dcd9ad6d600c888852c02515ea7e94af0dec4c12f13982acfbb20396cc0489ac"
+    },
+    {
+      "path": "docs/cookbook/responding-to-pr-review-on-a-stack.md",
+      "gitBlob": "61b15fd5e7b3a528957ef3c9e958aac0e11eb43b",
+      "sha256": "2089fd9defed6116b2f9181a05049d00608d7e871d62a97fe3b7e568d3d49a57",
+      "adaptedSHA256": "0904f078499884a27a90147c46721916a315f51f4559bca03729ab7b9f1d936e"
+    },
+    {
+      "path": "docs/cookbook/reviewing-persistence-type-changes.md",
+      "gitBlob": "c2498599cf4de0556978999f3fa31640042efa81",
+      "sha256": "5a2d26995bbe60b0e87588fa91984b0cf9a89a8b49428c626cc9ccc919feae2f",
+      "adaptedSHA256": "4f2e5243951be42ed5b0f84ade7bb73f20cc57970f7e4e2d34a51dfeab3dd24a"
+    },
+    {
+      "path": "docs/cordis-tutorial/02-lifecycle-and-effects.md",
+      "gitBlob": "8e75708eb0cba1aceb7fa3dae5ae334995eb113f",
+      "sha256": "109dec778aa71245e17beb2df51d12e9a962db4e2ef7f1221ade268ac4b8a019",
+      "adaptedSHA256": "cd57386bfe541df13ef4ce1ca7b3fc440adb8680b36271982c27dfd24c611221"
+    },
+    {
+      "path": "docs/cordis-tutorial/03-services.md",
+      "gitBlob": "ebfc400dbbc701a3c164c7d30c371dec879d7d73",
+      "sha256": "cbc4bf3afd2694ae07c1019b295ba080439ebd28884cd0b56d898bf4d7537ac9",
+      "adaptedSHA256": "bc6ba39795d7340be7b9489ed47c738d1992810b2acae4538970e177b2cecdc3"
+    },
+    {
+      "path": "docs/defensive-patterns/README.md",
+      "gitBlob": "c74d1a4c29f0f06fac980a7a2a946170eb970cfd",
+      "sha256": "14f40ce8270e5a990343def5504ed8cb3ac0cdc6738289d4fdaf766e8347dc94",
+      "adaptedSHA256": "3ace83607936b4c6df742eb85e9d50b0c9e7cf012b6b1e4ac91d48710aecf2b0"
+    },
+    {
+      "path": "docs/defensive-patterns/client-components.md",
+      "gitBlob": "7b0ec0463a426f240fbe081bb0459f546dcfe81c",
+      "sha256": "1ff16ac5e474fff7dc03ef9f1e602f7a4c9e75b1fcf97907c9e263f2ef5b77f4",
+      "adaptedSHA256": "d19378b2a3656b02187337b074839b355a60ea5ae42dd8a2b7def2eb5a262e46"
+    },
+    {
+      "path": "docs/defensive-patterns/conversation-and-session.md",
+      "gitBlob": "f2f610ebe4d25c7cea6f7229e0bb969a9d064cf6",
+      "sha256": "470b0abd31c3a35303af11e20addc19d2a487c9524ca053d28224e5c6c0700a1",
+      "adaptedSHA256": "a8c5edaa7f6fd1835bd386814dce5aa7846089c20cea0350b3603b2bf30613b9"
+    },
+    {
+      "path": "docs/defensive-patterns/general.md",
+      "gitBlob": "d0e2da7011bceba047320f2bdefa621864b75a7d",
+      "sha256": "9a0e837386581e977be739e7d2ff5657fc2a060d86c75744bd0a92aa29a54b33",
+      "adaptedSHA256": "677ba813c3c4076e7154255d07c2e2357a7d3aa1236f7c887f9b2cd6c01ecb2c"
+    },
+    {
+      "path": "docs/defensive-patterns/package-surface.md",
+      "gitBlob": "5876dfa4635bb88397d49aa9a260f6d0cc09be22",
+      "sha256": "ce8173839eda59ce513b1f4ff3b588f219be7ed2a3222acb31e85d2db111d7bb",
+      "adaptedSHA256": "0de4fe24b81bd4d177f4a25647262aa28849618aaf8879cbab6fb2a1b7dded5e"
+    },
+    {
+      "path": "docs/defensive-patterns/remote-and-api.md",
+      "gitBlob": "5bfda3bd19019619b6f81eb3f697b8818a0a9865",
+      "sha256": "77a41439f629d76949354abbae3ed8be72b725ce7b3224672ff2c46d04cb2bba",
+      "adaptedSHA256": "60937cbbf6d3459796d66f9fdb897c8500403b58dcfd111d3fab8588d84b0a2e"
+    },
+    {
+      "path": "docs/development.md",
+      "gitBlob": "406b6c1a7dafbb2e29286961eedd0a3553ecf1e7",
+      "sha256": "bb06597dfeaf30de75b9d8a9220a4be401e79a71aadc21bc2766bd77eabe3cde",
+      "adaptedSHA256": "81ad4bb2f46151aaff75dbb87cb0d2d696e1573bc913f5b03206ae873da4ca1b"
+    },
+    {
+      "path": "docs/i18n/README.md",
+      "gitBlob": "fc4b23279c186ae41be375868e3774c7022b7b00",
+      "sha256": "31ac7518eb4312c96656729a8e834a6c9ce2275f77108c04739a43eff4aac48e",
+      "adaptedSHA256": "b3ef242be1dd3de31d610ab6886f9dde21b4ba91d326c7d197896af71dce54d3"
+    },
+    {
+      "path": "docs/i18n/style-samples.md",
+      "gitBlob": "b177b105233f9844abed5ce00a69f7fecdfe6210",
+      "sha256": "d57b411b3da9795856cccda90b9cab226d8e63c0bb97703e0882d4a5e1a6760b",
+      "adaptedSHA256": "4673dc977d42cf7bf0cce5c766f1e56a7f49b0bb996847f6e97f36d7e88cd798"
+    },
+    {
+      "path": "docs/i18n/terminology.md",
+      "gitBlob": "5971f886009f9b3c3da21b4b5237ecf8d6e4d744",
+      "sha256": "b3e56d9b2c6c2cf2bcd6a48aa622b65cafc7755433490758d4346844c0ead4cc",
+      "adaptedSHA256": "b3e56d9b2c6c2cf2bcd6a48aa622b65cafc7755433490758d4346844c0ead4cc"
+    },
+    {
+      "path": "docs/i18n/translation-prompt.md",
+      "gitBlob": "47bc8ca1d810b2d9083302dba6387172a2f0ab7b",
+      "sha256": "c9c75afabe8070d3e27caa182fd14164bb8b8d8764f3720fbaab45caf5f2fca3",
+      "adaptedSHA256": "915a64f7a16eb0a235b580c356a770fa5ec1e4cdb8e5d6856c609c7598e0ca7c"
+    },
+    {
+      "path": "docs/i18n/translation-rules.md",
+      "gitBlob": "f268a09cf02e1a079065441271ffb304eb81d3ee",
+      "sha256": "4ce7dfea77c4a4bbab5f466820e3d8e471029ff024e22a90892eb451f8e01f48",
+      "adaptedSHA256": "637438adfa8cd537c11e8e3d025e94022a2e608a00f03fefcbd4b683186f80c3"
+    },
+    {
+      "path": "docs/persistence-changes/README.md",
+      "gitBlob": "cb6e92658d998e2067d505b857003066b3cbc7d9",
+      "sha256": "7d3dc117fbbab6195641d94b9ebf6fb5e77c5dbc7b956c5ac873103598e9b0f5",
+      "adaptedSHA256": "ee73ae66fa004d76c9a7eb9fece765cdaaf68fc0742818b2c04505b9c2b0c521"
+    },
+    {
+      "path": "docs/persistence-changes/historical-formats/README.md",
+      "gitBlob": "e0a594594d4d87324a524da5a2542df860170420",
+      "sha256": "02f3b0501a589a0a143a0e9bec5fa5e8bb3cd4bd953f341f3d345e2cdc0d8a4d",
+      "adaptedSHA256": "b9ad671b57f1cc7b7383385eac6dbc9d45b7ca8f243ce90dad8e79530b9fb7b3"
+    },
+    {
+      "path": "docs/persistence-changes/releases/README.md",
+      "gitBlob": "c818f28d36e3f04c610a9180c7d2d7eb34ad09c5",
+      "sha256": "7b0c198cb9ad03c991dca0ce4f52cd4cee6be382e9721bc13b14396a4a835790",
+      "adaptedSHA256": "ce756f103bea1d4b7935ea9d532f2c9594d1b3f02d534510edc94e58eff55066"
+    },
+    {
+      "path": "docs/subsystems/README.md",
+      "gitBlob": "86e30a5519991b19d79b3440c692f22b105795a3",
+      "sha256": "4378f7d8c292c67829a1014e40f20c8af1a3e3b789311e1a704ed4b798fff3a0",
+      "adaptedSHA256": "11b1627841d54970da6034a4ddcdbeb11bc5dabb6abc49d83d9485020f37b623"
+    },
+    {
+      "path": "docs/testing.md",
+      "gitBlob": "1ba63f9c3596457fd22ad4b528f81bbbab9bfd6f",
+      "sha256": "d51726817f87d7599e9d59e376435f3dbdd37fe0bba799ac0def348a0e7b5ea1",
+      "adaptedSHA256": "6f1ea5e1856699a162377d3c12cf5c7276a4efc06a212f5c4de6a925dea52e14"
+    },
+    {
+      "path": "docs/web-styling.md",
+      "gitBlob": "f2ae2a6ffdda72a22b3b5e2ff04c58b978ad1b7b",
+      "sha256": "287b4eb0e73f7f3f7499733c6c6792fba2025b5b8487d9e73aaafe48ad8f46c6",
+      "adaptedSHA256": "c3e16111c190f373291fe4e3001f15ecdcde5ad9f5261fdd86f5f971fadcdc68"
+    }
+  ]
+}

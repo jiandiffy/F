@@ -152,7 +152,7 @@ final class VersionsPlugin: NSObject, FPlugin, FProcessActivity {
         let source = URL(fileURLWithPath: cli).resolvingSymlinksInPath().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let bundled = Bundle.main.resourceURL?.appendingPathComponent("runtime/harness/src/versions/cli.mjs")
         let script = bundled.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil } ?? source.appendingPathComponent("runtime/harness/src/versions/cli.mjs")
-        let node = source.appendingPathComponent("runtime/pi/runtime/node/bin/node")
+        let node = PiPaths.nodeURL(for: cli)
         guard let input = try? JSONSerialization.data(withJSONObject: request) else { completion(["ok": false, "error": "无效版本请求"]); return }
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process(), pipe = Pipe(), stdin = Pipe()

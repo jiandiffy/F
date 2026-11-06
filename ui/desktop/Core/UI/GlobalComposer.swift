@@ -123,9 +123,11 @@ final class AgentOverlayDock: NSView {
     var onSizeChange: (() -> Void)?
     /// 画板弹窗打开时隐藏输入框和折叠框，关闭后恢复。
     func setComposerHidden(_ hidden: Bool) {
+        guard composer.isHidden != hidden else { return }
         composer.isHidden = hidden
         panel.isHidden = hidden
         needsLayout = true
+        onSizeChange?()
     }
 
     func toggleExpanded() {
@@ -197,14 +199,26 @@ final class AgentOverlayDock: NSView {
         transcript.scrollRangeToVisible(NSRange(location: (transcript.string as NSString).length, length: 0))
     }
 
+    /// 从工作区底边到折叠框顶边的高度：浮在应用内容上的部分，应用需要让出这么多滚动余量。
+    var occupiedHeight: CGFloat {
+        guard !isHidden, !composer.isHidden else { return 0 }
+        return panelFrame(for: composer.layoutFrame(in: bounds)).maxY
+    }
+
+    private func panelFrame(for composerFrame: NSRect) -> NSRect {
+        let top = composerFrame.maxY + 6
+        let height = isExpanded ? min(240, max(0, bounds.height - top - 8)) : Self.headerHeight
+        return NSRect(x: composerFrame.minX, y: top, width: max(0, composerFrame.width), height: height)
+    }
+
     override func layout() {
         super.layout()
         let composerFrame = composer.layoutFrame(in: bounds)
         composer.frame = composerFrame
         let width = max(0, composerFrame.width)
-        let top = composerFrame.maxY + 6
-        let height = isExpanded ? min(240, max(0, bounds.height - top - 8)) : Self.headerHeight
-        panel.frame = NSRect(x: composerFrame.minX, y: top, width: width, height: height)
+        let frame = panelFrame(for: composerFrame)
+        let height = frame.height
+        panel.frame = frame
         header.frame = NSRect(x: 0, y: max(0, height - Self.headerHeight), width: width, height: Self.headerHeight)
         scrollView.frame = NSRect(x: 0, y: 0, width: width, height: max(0, height - Self.headerHeight))
         let content = scrollView.contentSize

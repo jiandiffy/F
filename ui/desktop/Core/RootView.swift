@@ -77,6 +77,8 @@ final class RootView: NSView {
     private let whiteboardPlugin: WhiteboardPlugin
     private let dropHint = FolderDropHintView(frame: .zero)
     private let overlayDock = AgentOverlayDock(frame: .zero)
+    /// 主界面应用各自的滚动容器：对话框遮挡时内容可以上下拉动。
+    private var workspaceScrolls: [String: WorkspaceScrollView] = [:]
     private var whiteboardView: WhiteboardView { whiteboardPlugin.board }
     private var darkTheme = false
     private var lastActivitySignature = ""
@@ -139,7 +141,7 @@ final class RootView: NSView {
         wantsLayer = true
         // 文件夹可以直接拖到窗口任意位置（包括网页视图上方）。
         registerForDraggedTypes([.fileURL])
-        (registry.plugins.filter { $0.placement == .workspace }.map(\.view) +
+        (workspaceHosts() +
          [activeConversation, bottomPanel, leftPanel, rightPanel] +
          registry.plugins.filter { $0.placement == .workspace }.compactMap(\.toolbarView) +
          [leftButton, addButton, bottomButton, rightButton, dropHint]).forEach(addSubview)
@@ -432,8 +434,7 @@ final class RootView: NSView {
         if plugins.bottomPlugins.isEmpty { bottomOpen = false; bottomButton.isActive = false; bottomHost.setVisible(false) }
         if case .application(let id) = mode, !plugins.isEnabled(id) { showConversation(nil) }
         for plugin in plugins.plugins where plugin.placement == .workspace {
-            plugin.view.isHidden = mode != .application(plugin.id) || !plugins.isEnabled(plugin.id)
-            plugin.toolbarView?.isHidden = plugin.view.isHidden
+            setWorkspaceVisible(plugin, mode == .application(plugin.id) && plugins.isEnabled(plugin.id))
         }
         if case .application(let id) = mode { leftSidebar.selectApplication(id) }
         refreshRightSidebar()
@@ -489,8 +490,7 @@ final class RootView: NSView {
         else if plugin.projectAssociation == .project { plugin.projectDidChange(projectURL) }
         conversations.values.forEach { $0.isHidden = true }
         for application in plugins.plugins where application.placement == .workspace {
-            application.view.isHidden = application.id != id
-            application.toolbarView?.isHidden = application.view.isHidden
+            setWorkspaceVisible(application, application.id == id)
         }
         leftSidebar.selectApplication(id)
         plugin.activate()
@@ -771,8 +771,7 @@ final class RootView: NSView {
         mode = .conversation
         overlayDock.reset()
         for plugin in plugins.plugins where plugin.placement == .workspace {
-            plugin.view.isHidden = true
-            plugin.toolbarView?.isHidden = true
+            setWorkspaceVisible(plugin, false)
             plugin.deactivate()
         }
         for other in conversations.values where other !== view { other.isHidden = true }
@@ -1020,6 +1019,34 @@ final class RootView: NSView {
                       width: max(0, right - left), height: FChrome.toolbarHeight)
     }
 
+    /// 每个主界面应用一个滚动容器；插件在运行中新增时按需补上。
+    private func workspaceHosts() -> [WorkspaceScrollView] {
+        plugins.plugins.filter { $0.placement == .workspace }.map { workspaceScroll(for: $0) }
+    }
+
+    private func workspaceScroll(for plugin: FPlugin) -> WorkspaceScrollView {
+        if let host = workspaceScrolls[plugin.id] { return host }
+        let host = WorkspaceScrollView(frame: .zero)
+        host.adopt(plugin.view)
+        workspaceScrolls[plugin.id] = host
+        // 应用内容始终在对话界面下方，对话框继续浮在最上层。
+        if activeConversation.superview === self { addSubview(host, positioned: .below, relativeTo: activeConversation) }
+        else { addSubview(host) }
+        return host
+    }
+
+    /// 网页类应用自带顶部留白，原生应用让出宿主悬浮按钮。
+    private func workspaceFrame(for plugin: FPlugin, in workspace: NSRect) -> NSRect {
+        ["whiteboard", "browser"].contains(plugin.id) ? workspace : FChrome.nativeWorkspaceFrame(in: workspace)
+    }
+
+    /// 应用视图、滚动容器和顶部工具条一起显示或隐藏。
+    private func setWorkspaceVisible(_ plugin: FPlugin, _ visible: Bool) {
+        plugin.view.isHidden = !visible
+        workspaceScroll(for: plugin).isHidden = !visible
+        plugin.toolbarView?.isHidden = !visible
+    }
+
     private func applyFrames() {
         leftPanel.frame = leftFrame()
         rightPanel.frame = rightFrame()
@@ -1028,7 +1055,10 @@ final class RootView: NSView {
         conversations.values.forEach { $0.frame = workspace }
         overlayDock.frame = workspace
         for plugin in plugins.plugins where plugin.placement == .workspace {
-            plugin.view.frame = ["whiteboard", "browser"].contains(plugin.id) ? workspace : FChrome.nativeWorkspaceFrame(in: workspace)
+            let host = workspaceScroll(for: plugin)
+            host.frame = workspaceFrame(for: plugin, in: workspace)
+            // 对话框遮挡的高度变成可滚动的余量，被盖住的内容能拉到它上方。
+            host.dialogInset = overlayDock.isHidden ? 0 : overlayDock.occupiedHeight
             plugin.toolbarView?.frame = toolbarFrame(in: workspace)
         }
 
@@ -1229,7 +1259,7 @@ final class RootView: NSView {
             self.conversations.values.forEach { $0.animator().frame = workspace }
             self.overlayDock.animator().frame = workspace
             for plugin in self.plugins.plugins where plugin.placement == .workspace {
-                plugin.view.animator().frame = ["whiteboard", "browser"].contains(plugin.id) ? workspace : FChrome.nativeWorkspaceFrame(in: workspace)
+                self.workspaceScroll(for: plugin).animator().frame = self.workspaceFrame(for: plugin, in: workspace)
                 plugin.toolbarView?.animator().frame = self.toolbarFrame(in: workspace)
             }
             let size = self.bottomPanel.bounds

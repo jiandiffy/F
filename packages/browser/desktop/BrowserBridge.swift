@@ -73,7 +73,7 @@ final class BrowserBridge {
     static func install(extensionID: String) throws -> URL {
         guard let resources = Bundle.main.resourceURL,
               let cli = Bundle.main.object(forInfoDictionaryKey:"PiCLIPath") as? String else { throw NSError(domain:"F Browser",code:1,userInfo:[NSLocalizedDescriptionKey:"浏览器连接资源缺失。"] ) }
-        let node = URL(fileURLWithPath:cli).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("runtime/node/bin/node")
+        let node = PiPaths.nodeURL(for: cli)
         let process = Process(), output = Pipe(); process.executableURL = node
         process.arguments = [resources.appendingPathComponent("runtime/harness/src/browser/install-bridge.mjs").path,"--node",node.path,"--extension-id",extensionID]
         process.standardOutput = output; process.standardError = output

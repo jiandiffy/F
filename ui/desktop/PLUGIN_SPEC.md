@@ -234,7 +234,7 @@ Native IPC 端点位于 `PluginStorage.directory(for:"browser")`，目录0700、
 `placement = .service` 用于无视图 Agent 能力，仅进入 plugin 开关，不产生空应用页面或底栏进程。
 
 Agent 侧插件使用真正的 Cordis `inject`、`ctx.effect`、`ctx.on` 和稳定服务键。
-模型、远程和画板适配器位于 `runtime/pi/agent/modules/`；唯一组合入口位于 `runtime/harness/src/index.mjs`。
+模型、远程和画板适配器位于 `runtime/agent/adapters/`；唯一组合入口位于 `runtime/harness/src/index.mjs`。
 添加能力应挂载独立插件，而不是修改主 Agent 循环。运行中工具先完成所属任务回收，再移除其服务。
 
 ## 9. Agent 插件 HMR v1（显式开发入口）
@@ -324,4 +324,4 @@ script/parallel/pipeline 执行接口已经移除。旧历史保留，但不继�
 
 素材与任务说明放 skills/<name>，输出模板放 assets，领域材料放 references，内置领域工具放
 `runtime/harness/src/<domain>/` 并由组合根挂载。验证目标树审批、方法拒绝重提、3分支固定起点、一次孙级拆分、
-独立审核、失败修复、候选选择、取消、凭据拒传和真实固定模型工具继承。维护 F 按 F_MAINTENANCE.md 验收。
+独立审核、失败修复、候选选择、取消、凭据拒传和真实固定模型工具继承。维护 F 按 skills/f-maintenance/references/maintenance.md 验收。

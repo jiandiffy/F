@@ -98,6 +98,38 @@ extension AppRowView {
     }
 }
 let historyWork = URL(fileURLWithPath: ProcessInfo.processInfo.environment["F_HISTORY_ROOT"]!)
+let migratedSessions = PiHistory.agentDirectory()!
+let migratedFolder = migratedSessions.appendingPathComponent("legacy-project", isDirectory: true)
+try! FileManager.default.createDirectory(at: migratedFolder, withIntermediateDirectories: true)
+let migratedHistory = migratedFolder.appendingPathComponent("retained.jsonl")
+try! Data("retained session bytes".utf8).write(to: migratedHistory)
+let legacyHistory = historyWork.appendingPathComponent("removed/runtime/pi/agent/sessions/legacy-project/retained.jsonl").path
+checkHistory(PiHistory.canonicalSessionPath(legacyHistory) == migratedHistory.standardizedFileURL.path, "removed runtime path resolves to the original centralized history")
+let legacyPending = historyWork.appendingPathComponent("removed/runtime/pi/agent/sessions/legacy-project/pending.jsonl").path
+let pendingHistory = migratedFolder.appendingPathComponent("pending.jsonl")
+let mappedPending = URL(fileURLWithPath: PiHistory.canonicalSessionPath(legacyPending))
+checkHistory(mappedPending.deletingLastPathComponent().standardizedFileURL == migratedFolder.standardizedFileURL && mappedPending.lastPathComponent == "pending.jsonl", "pending sessions resolve before their first history write")
+try! Data("pending session bytes".utf8).write(to: mappedPending)
+checkHistory((try! String(contentsOf: pendingHistory, encoding: .utf8)) == "pending session bytes" && !FileManager.default.fileExists(atPath: legacyPending), "first history write uses centralized data without recreating the removed runtime")
+let migrationDefaults = UserDefaults(suiteName: "local.f.runtime-migration." + UUID().uuidString)!
+migrationDefaults.set([legacyHistory: "11111111-2222-3333-4444-555555555555"], forKey: "FConversationBoardIDs")
+checkHistory(ConversationBoards.id(for: migratedHistory.path, defaults: migrationDefaults) == "11111111-2222-3333-4444-555555555555", "existing board identity survives runtime relocation")
+checkHistory(ConversationBoards.sessionPath(project: historyWork, id: "11111111-2222-3333-4444-555555555555", defaults: migrationDefaults) == migratedHistory.standardizedFileURL.path, "board lookup follows relocated history")
+checkHistory((try! String(contentsOf: migratedHistory, encoding: .utf8)) == "retained session bytes", "migration preserves original history bytes")
+migrationDefaults.removeObject(forKey: "FConversationBoardIDs")
+let runtimeFixture = historyWork.appendingPathComponent("F/runtime", isDirectory: true)
+let runtimeCLI = runtimeFixture.appendingPathComponent("agent/bin/f")
+let fixtureNode = runtimeFixture.appendingPathComponent("node/bin/node")
+try! FileManager.default.createDirectory(at: runtimeCLI.deletingLastPathComponent(), withIntermediateDirectories: true)
+try! FileManager.default.createDirectory(at: fixtureNode.deletingLastPathComponent(), withIntermediateDirectories: true)
+try! Data().write(to: runtimeCLI)
+try! Data("#!/bin/sh\nprintf F_SHARED_NODE".utf8).write(to: fixtureNode)
+try! FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixtureNode.path)
+let runtimeProbe = Process(), runtimeOutput = Pipe()
+runtimeProbe.executableURL = PiPaths.nodeURL(for: runtimeCLI.path)
+runtimeProbe.standardOutput = runtimeOutput
+try! runtimeProbe.run(); runtimeProbe.waitUntilExit()
+checkHistory(runtimeProbe.terminationStatus == 0 && String(data: runtimeOutput.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) == "F_SHARED_NODE", "native services launch shared Node without the removed nested runtime")
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let historyProject = historyWork.appendingPathComponent("项目")
@@ -160,6 +192,11 @@ for row in list.projectRowsForHistory { row.layoutSubtreeIfNeeded(); row.clickAd
 checkHistory(Set(opened) == Set([historyProject.standardizedFileURL.path, otherProject.standardizedFileURL.path]), "every project plus binds its own folder")
 checkHistory(list.standaloneAddsForHistory == 0, "no standalone new-conversation row")
 let view = ConversationView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+view.prepareProject(historyProject, boardID: "aaaaaaaa", session: legacyHistory)
+checkHistory(view.ownsSession(migratedHistory.path), "restored conversation owns its relocated history before starting an Agent")
+let migratedResume = view.updateResume(id: "runtime-migration", announcement: "")
+view.restoreUpdate(migratedResume)
+checkHistory(view.ownsSession(migratedHistory.path) && view.sessionPath == migratedHistory.standardizedFileURL.path, "update restore retains canonical session identity")
 view.prepareProject(historyProject, boardID: "aaaaaaaa", session: session.path)
 view.show(PiChat(id: "history", title: "历史", date: Date(), path: session, cwd: historyProject.path))
 let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)

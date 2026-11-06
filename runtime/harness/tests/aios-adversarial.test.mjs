@@ -9,7 +9,7 @@ import { GoalState } from '../../../packages/agent-bus/agent/state.mjs';
 import { leasesFor } from '../../../packages/agent-bus/agent/leases.mjs';
 import { DatasetStore } from '../../../packages/data-base/agent/store.mjs';
 import { command, parseArxiv } from '../../../packages/data-base/agent/providers.mjs';
-import whiteboard from '../../pi/agent/modules/fy-whiteboard.ts';
+import whiteboard from '../../agent/adapters/fy-whiteboard.ts';
 
 async function temporary(t) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'f-aios-adversarial-'));
@@ -33,10 +33,10 @@ function host() {
 // Exercise the installed SDK's loadout/transcript and execution adapters. Only
 // the model stream is local; no provider, network request or app update is used.
 async function sdkFixture(t, { tools } = {}) {
-  const { createAgentSession, ModelRuntime, DefaultResourceLoader, SettingsManager, SessionManager } = await import('../../pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js');
-  const { getModel } = await import('../../pi/node_modules/@earendil-works/pi-ai/dist/compat.js');
-  const { createAssistantMessageEventStream } = await import('../../pi/node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js');
-  const { getCurrentTools } = await import('../../pi/node_modules/@earendil-works/pi-ai/dist/utils/transcript.js');
+  const { createAgentSession, ModelRuntime, DefaultResourceLoader, SettingsManager, SessionManager } = await import('../../agent/node_modules/@earendil-works/pi-coding-agent/dist/index.js');
+  const { getModel } = await import('../../agent/node_modules/@earendil-works/pi-ai/dist/compat.js');
+  const { createAssistantMessageEventStream } = await import('../../agent/node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js');
+  const { getCurrentTools } = await import('../../agent/node_modules/@earendil-works/pi-ai/dist/utils/transcript.js');
   const cwd = await temporary(t), agentDir = path.join(cwd, 'agent'); await mkdir(agentDir);
   const settings = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, cacheWarming: 'off' });
   let kernel, session, plugin, nextCall, executed = 0, calls = 0;
@@ -217,7 +217,7 @@ test('eight independent Node processes preserve all 120 board writes under disjo
   const directory = await temporary(t), saved = process.env.F_BOARD_DIR;
   process.env.F_BOARD_DIR = directory;
   t.after(() => { if (saved === undefined) delete process.env.F_BOARD_DIR; else process.env.F_BOARD_DIR = saved; });
-  const moduleURL = new URL('../../pi/agent/modules/fy-whiteboard.ts', import.meta.url).href;
+  const moduleURL = new URL('../../agent/adapters/fy-whiteboard.ts', import.meta.url).href;
   const entries = [];
   for (let index = 0; index < 8; index++) {
     const owner = `process-${index}`, context = { cwd: directory, sessionManager: { getSessionId: () => owner } };

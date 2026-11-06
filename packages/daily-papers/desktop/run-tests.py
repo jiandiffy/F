@@ -432,7 +432,7 @@ final class Fixture {
 }
 '''
 (OUT / "Tests.swift").write_text(SOURCE)
-command = ["swiftc", "-parse-as-library", "-module-cache-path", str(OUT / "module-cache"), "-o", str(OUT / "tests"), str(ROOT / "Core/Plugins.swift"), str(ROOT / "Core/Kernel.swift"), str(ROOT / "Core/UI/Chrome.swift"), *map(str, sorted((ROOT / "Plugins/Browser").glob("*.swift"))), *map(str, sorted(HERE.glob("*.swift"))), str(OUT / "Tests.swift")]
+command = ["swiftc", "-parse-as-library", "-module-cache-path", str(OUT / "module-cache"), "-o", str(OUT / "tests"), str(ROOT / "Core/Agent/RuntimePaths.swift"), str(ROOT / "Core/Plugins.swift"), str(ROOT / "Core/Kernel.swift"), str(ROOT / "Core/UI/Chrome.swift"), *map(str, sorted((ROOT / "Plugins/Browser").glob("*.swift"))), *map(str, sorted(HERE.glob("*.swift"))), str(OUT / "Tests.swift")]
 print("OUTPUT:", OUT, flush=True)
 print("COMPILE:", " ".join(command), flush=True)
 compiled = subprocess.run(command, capture_output=True, text=True, timeout=180)

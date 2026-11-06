@@ -17,7 +17,7 @@ const report = { provider: 'gpt', model: 'gpt-6.1-sol', thinking: 'high', starte
 const tools = ['read','write','edit','bash','ls','find','grep','skill','bus','resource_scope','maintenance_scope','subagent','list_agents','send_message','interrupt_agent'];
 let child;
 try {
-  child = new ChildRPC(path.join(root, 'runtime/pi/bin/pi'), ['--session', report.session, '--provider', report.provider, '--model', report.model, '--thinking', report.thinking, '--tools', tools.join(',')], {
+  child = new ChildRPC(path.join(root, 'runtime/agent/bin/f'), ['--session', report.session, '--provider', report.provider, '--model', report.model, '--thinking', report.thinking, '--tools', tools.join(',')], {
     cwd: root,
     env: { ...process.env, F_AGENT_DEPTH: '0', F_BOARD_DIR: path.join(directory, 'board'), F_CONVERSATION_DIR: path.join(directory, 'conversation'), F_SOURCE_ROOT: root, F_HARNESS_DIR: path.join(root, 'runtime/harness'), F_UPDATE_DELEGATED: '1' },
     onEvent(event) {
@@ -31,10 +31,10 @@ try {
   if (state.model?.provider !== report.provider || state.model?.id !== report.model || state.thinkingLevel !== 'high') throw new Error('The requested model or thinking level is not active');
   report.actualModel = state.model.id; report.actualThinking = state.thinkingLevel;
   const instruction = request ?? (resume ? `继续同一轮F自迭代。你的versions污染保护与bus白名单修改已保留；上轮因两层sandbox嵌套和墙钟超时中断，不算通过。主维护Agent已修复沙箱组合、动态工具挂卸与dataset边界，错误的测试断言位置也已修正。现在只读复查和验收，不再修改产品或测试文件。
-先检查并释放你自己的遗留 resource_scope 与 maintenance_scope 租约，不能清除别人的。运行 ./runtime/pi/runtime/node/bin/node --test runtime/harness/tests/versions*.test.mjs runtime/harness/tests/aios*.test.mjs，保留真实退出码，不可用吞错命令。然后用独立 subagent 只读复查你修的versions和bus并执行针对性测试；不要传maxDepth，默认1已禁止孙agent；它不需要申请写范围，不要向不存在的parent发消息。你是本次维护验证的主agent，外部维护者稍后发布。全部完成后必须调用skill unslop并给1000字以内中文报告，区分实际通过和仍失败项。不要构建APP、发布、重启或停掉F。` : `你正在通过 F 自身运行时，用 gpt-6.1-sol high 做用户要求的一轮自迭代。主维护Agent已完成AI OS重构，现在授权你检查、修复和验证这一轮修改。不要发布更新、不要重启或停止F，主维护Agent在你结束后统一构建验收。
-先读取 AGENTS.md、skills/f-maintenance/SKILL.md、F_MAINTENANCE.md 和 skills/f-maintenance/references/AI_OS.md。检查范围仅 runtime/harness/src/aios/bus.mjs、runtime/harness/src/versions/project.mjs 及相应 tests，不读取凭据或私人历史。其他模块有独立Agent在修，请勿修改。
+先检查并释放你自己的遗留 resource_scope 与 maintenance_scope 租约，不能清除别人的。运行 ./runtime/node/bin/node --test runtime/harness/tests/versions*.test.mjs runtime/harness/tests/aios*.test.mjs，保留真实退出码，不可用吞错命令。然后用独立 subagent 只读复查你修的versions和bus并执行针对性测试；不要传maxDepth，默认1已禁止孙agent；它不需要申请写范围，不要向不存在的parent发消息。你是本次维护验证的主agent，外部维护者稍后发布。全部完成后必须调用skill unslop并给1000字以内中文报告，区分实际通过和仍失败项。不要构建APP、发布、重启或停掉F。` : `你正在通过 F 自身运行时，用 gpt-6.1-sol high 做用户要求的一轮自迭代。主维护Agent已完成AI OS重构，现在授权你检查、修复和验证这一轮修改。不要发布更新、不要重启或停止F，主维护Agent在你结束后统一构建验收。
+先读取 AGENTS.md、skills/f-maintenance/SKILL.md、skills/f-maintenance/references/maintenance.md 和 skills/f-maintenance/references/AI_OS.md。检查范围仅 runtime/harness/src/aios/bus.mjs、runtime/harness/src/versions/project.mjs 及相应 tests，不读取凭据或私人历史。其他模块有独立Agent在修，请勿修改。
 独立检测已复现两个需局部修复的问题：1) versions-adversarial.test.mjs：merge前测试可自行提交越界文件，merge后测试可git add范围外文件、秘密src/.env，然后自动merge commit带入。必须验证测试前后HEAD、index与工作树，拒绝带入且保留现场，不能reset丢数据。2) aios-adversarial.test.mjs：显式--tools时bus deactivate不移除实际schema/execute权限，白名单应为权限上限，仍要尊重停用。识别并修复这两个真实功能缺陷，不修改测试来隐藏失败。没有真实问题就报告验证结果，不凑改动。写文件前先 maintenance_scope claim，再 resource_scope claim，重新读取最新文件；做完释放两个租约。bash对F源码只读，修改只能write/edit。测试输出放/tmp。
-测试命令使用 ./runtime/pi/runtime/node/bin/node --test runtime/harness/tests/versions*.test.mjs runtime/harness/tests/aios*.test.mjs；其中dataset evidence/arxiv解析失败由另一Agent负责，你只报告这些外部失败，不修改dataset模块。用独立subagent检查你修过的部分并实际测试，子agent只读测试时不需要写源码。不要让子agent再创建子agent。完成后返回1000字以内中文报告，列出实际修复和测试、未解决问题；自然语言报告先调用unslop。`);
+测试命令使用 ./runtime/node/bin/node --test runtime/harness/tests/versions*.test.mjs runtime/harness/tests/aios*.test.mjs；其中dataset evidence/arxiv解析失败由另一Agent负责，你只报告这些外部失败，不修改dataset模块。用独立subagent检查你修过的部分并实际测试，子agent只读测试时不需要写源码。不要让子agent再创建子agent。完成后返回1000字以内中文报告，列出实际修复和测试、未解决问题；自然语言报告先调用unslop。`);
   const result = await child.prompt(instruction + "\n报告最后一行只写：验收通过 或 验收未通过。存在未解决产品缺陷时必须写验收未通过，不得把完成运行当作验证通过。");
   report.stopReason = result.stopReason;
   report.summary = result.output?.filter(part => part.type === 'text').map(part => part.text).join('\n');

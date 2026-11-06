@@ -24,7 +24,7 @@ F 内置 Agent 交付必须使用 `scripts/prepare-update.py`，该入口串行�
 Agent 大版本策略由 `runtime/harness/tests/versions*.test.mjs` 验证。GitHub权限查询可用隔离runner，快照祖先隔离用真实本机Git和临时bare仓库验证；这不等同真实GitHub联网发布验收。
 
 需要 macOS 图形登录会话和 Swift 命令行工具。构建脚本会在缺少全局 npm 时使用
-`runtime/pi/runtime/node/bin` 中自带的 Node。测试直接编译当前 `main.swift`，只替换应用入口，
+`runtime/node/bin` 中自带的 Node。测试直接编译当前 `main.swift`，只替换应用入口，
 使用临时项目和单独的应用标识，不访问真实会话或白板。
 
 检查内容：
@@ -94,6 +94,7 @@ Agent 大版本策略由 `runtime/harness/tests/versions*.test.mjs` 验证。Git
 - 画板禁用时停止轮询；关闭期间切换项目，重新启用恢复最新项目且不改写画板数据。
 - 临时独立应用仅注册一次，即可出现在应用栏、应用菜单并接收设置命令，不接收项目切换。
 - 项目插件的数据目录隔离；禁用画板后不注册 Agent 画板工具。
+- 主界面五个应用（画板、浏览器、版本、Daily Paper、Gmail）共用滚动容器：对话框占用高度成为文档末尾的滚动余量，被盖住的底部可以拉到对话框上方；窗口高度不足时内容仍按最低高度排版并可上下滚动；回到主对话后隐藏容器并清除余量。
 
 终端清屏追加覆盖：
 

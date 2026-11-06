@@ -59,9 +59,9 @@ Write each disclosure in the section it concerns, usually Changes, after a bold 
 | Change | What the description states | Rule owner |
 |---|---|---|
 | Changing the behavior an existing test describes | Why the behavior changed | The Tests describe behavior rule in [root AGENTS.md](../../../AGENTS.md) |
-| Raising a ceiling in `scripts/doc-budgets.manifest.json` | Each raised ceiling with its old and new value, and why the words are necessary | [Wordcount budgets](../../vendor/deepseek-harness/docs/AGENTS.md#wordcount-budgets) |
+| Raising a ceiling in `scripts/doc-budgets.manifest.json` | Each raised ceiling with its old and new value, and why the words are necessary | [Wordcount budgets](../dsh-doc/upstream/docs/AGENTS.md#wordcount-budgets) |
 | Changing product-user-visible GUI behavior | An embedded demonstration GIF, with the disclosures that record-browser-gif requires beside the embed; for each GUI change without a GIF, a statement that none is embedded and why | [record-browser-gif](../record-browser-gif/SKILL.md#every-gui-pull-request-includes-a-gif) |
-| Using a translation term the terminology list lacks | The source of the rendering, or a proposed rendering under pending terms | [Translation rules](../../vendor/deepseek-harness/docs/i18n/translation-rules.md) |
+| Using a translation term the terminology list lacks | The source of the rendering, or a proposed rendering under pending terms | [Translation rules](../dsh-doc/upstream/docs/i18n/translation-rules.md) |
 
 ## AI Usage
 

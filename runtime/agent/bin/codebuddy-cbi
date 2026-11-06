@@ -1,0 +1,9 @@
+#!/bin/sh
+F_AGENT_RUNTIME="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+export PATH="$F_AGENT_RUNTIME/../node/bin:$PATH"
+export CODEBUDDY_CONFIG_DIR="${F_USER_DATA_DIRECTORY:-$HOME/Library/Application Support/F}/auth/codebuddy/cbi"
+export CODEBUDDY_INTERNET_ENVIRONMENT=public
+export ACC_PRODUCT_CONFIG_PATH="$CODEBUDDY_CONFIG_DIR/product.json"
+export DISABLE_AUTOUPDATER=1
+unset CODEBUDDY_API_KEY CODEBUDDY_BASE_URL
+exec "$F_AGENT_RUNTIME/../node/bin/node" "$F_AGENT_RUNTIME/scripts/codebuddy-launch.cjs" cbi "$@"

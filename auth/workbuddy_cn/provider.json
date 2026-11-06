@@ -1,6 +1,6 @@
 {
   "provider": "cbc",
-  "adapter": "runtime/pi/vendor/pi-codebuddy-sdk-cbc/src/index.ts",
-  "credentials": "runtime/pi/codebuddy/cbc",
+  "adapter": "runtime/agent/providers/cbc/src/index.ts",
+  "credentials": "runtime/agent/codebuddy/cbc",
   "secretStorage": "existing-local-only"
 }
