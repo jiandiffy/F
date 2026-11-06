@@ -1,6 +1,6 @@
 # F 项目维护
 
-维护 F 时先使用 [f-maintenance](skills/f-maintenance/SKILL.md)，并读取 [F_MAINTENANCE.md](F_MAINTENANCE.md)。
+维护 F 时先使用 [f-maintenance](skills/f-maintenance/SKILL.md)，并读取 [maintenance.md](skills/f-maintenance/references/maintenance.md)。
 保留现有功能、项目与画板统一存储。
 应用插件修改使用 [f-plugins](skills/f-plugins/SKILL.md)，接口唯一来源为 [ui/desktop/PLUGIN_SPEC.md](ui/desktop/PLUGIN_SPEC.md)。
 UI 插件按 f-plugins 规范素材、界面和生命周期；Workflow/Agent 插件使用

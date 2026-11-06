@@ -10,9 +10,9 @@ This is a focused semantic review of Cordis ownership and lifecycle. Start a rep
 ## Sources of truth
 
 - [Repository conventions](../../../AGENTS.md): Cordis ownership requirements.
-- [Lifecycle and effects](../../vendor/deepseek-harness/docs/cordis-tutorial/02-lifecycle-and-effects.md): effect acquisition and disposal.
-- [Services](../../vendor/deepseek-harness/docs/cordis-tutorial/03-services.md): dependency tracking and service availability.
-- [Defensive patterns](../../vendor/deepseek-harness/docs/defensive-patterns/general.md): quiescent teardown and required completion listeners.
+- [Lifecycle and effects](../dsh-doc/upstream/docs/cordis-tutorial/02-lifecycle-and-effects.md): effect acquisition and disposal.
+- [Services](../dsh-doc/upstream/docs/cordis-tutorial/03-services.md): dependency tracking and service availability.
+- [Defensive patterns](../dsh-doc/upstream/docs/defensive-patterns/general.md): quiescent teardown and required completion listeners.
 
 ## Review workflow
 

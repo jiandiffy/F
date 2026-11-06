@@ -9,13 +9,18 @@ enum ConversationBoards {
     private static let retiredDirectory = "retired"
 
     static func id(for session: String, defaults: UserDefaults = .standard) -> String {
-        let path = URL(fileURLWithPath: session).standardizedFileURL.path
-        if let id = (defaults.dictionary(forKey: key) as? [String: String])?[path] { return id }
+        let path = PiHistory.canonicalSessionPath(session)
+        let aliases = defaults.dictionary(forKey: key) as? [String: String] ?? [:]
+        if let id = aliases[path] { return id }
+        if let old = aliases.sorted(by: { $0.key < $1.key }).first(where: { PiHistory.canonicalSessionPath($0.key) == path }) {
+            bind(session: path, id: old.value, defaults: defaults)
+            return old.value
+        }
         return SHA256.hash(data: Data(path.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     static func bind(session: String, id: String, defaults: UserDefaults = .standard) {
-        let path = URL(fileURLWithPath: session).standardizedFileURL.path
+        let path = PiHistory.canonicalSessionPath(session)
         var aliases = defaults.dictionary(forKey: key) as? [String: String] ?? [:]
         guard aliases[path] != id else { return }
         aliases[path] = id
@@ -214,7 +219,7 @@ enum ConversationBoards {
     /// 会话文件存在才算“找到对应的对话”。
     static func sessionPath(project: URL, id: String, defaults: UserDefaults = .standard) -> String? {
         let aliases = defaults.dictionary(forKey: key) as? [String: String] ?? [:]
-        return aliases.filter { $0.value == id }.keys.sorted().first { FileManager.default.fileExists(atPath: $0) }
+        return aliases.filter { $0.value == id }.keys.sorted().map { PiHistory.canonicalSessionPath($0) }.first { FileManager.default.fileExists(atPath: $0) }
     }
 
     /// 最近使用画板的对话接收共享画板里没有归属的图元。

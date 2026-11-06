@@ -9,8 +9,8 @@ Build tests that remain correct under the repository's real CI topology, not onl
 
 ## Read the owning rules
 
-- Use [the testing policy](../../vendor/deepseek-harness/docs/testing.md) to select unit, coverage, expected-output, snapshot, browser, or real-API evidence.
-- Use [the defensive patterns](../../vendor/deepseek-harness/docs/defensive-patterns/general.md) for lifecycle, subprocess, cancellation, and teardown behavior.
+- Use [the testing policy](../dsh-doc/upstream/docs/testing.md) to select unit, coverage, expected-output, snapshot, browser, or real-API evidence.
+- Use [the defensive patterns](../dsh-doc/upstream/docs/defensive-patterns/general.md) for lifecycle, subprocess, cancellation, and teardown behavior.
 - Read the active Vitest config and GitHub workflow when their worker or job topology affects the test.
 - For recorded-session scenarios, also follow [the snapshot instructions](../../../snapshots/AGENTS.md).
 - Use [dsh-pre-push-checks](../dsh-pre-push-checks/SKILL.md) after the test design is sound to select outgoing validation.

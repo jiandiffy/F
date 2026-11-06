@@ -16,7 +16,7 @@ const canonical = p => {
 // Compatibility entry points only identify the source; edits still require canonical paths.
 export function maintenanceSourceContext(root, cwd) {
   root = canonical(root); cwd = canonical(cwd);
-  return within(cwd, root) || [['gui-mac','ui/desktop'], ['pi','runtime/pi'], ['F_MAINTENANCE.md','F_MAINTENANCE.md']].every(([old, name]) => canonical(path.join(cwd, old)) === canonical(path.join(root, name)));
+  return within(cwd, root) || [['gui-mac','ui/desktop'], ['pi','runtime/agent']].every(([old, name]) => canonical(path.join(cwd, old)) === canonical(path.join(root, name)));
 }
 
 // Private event identity plus the exact transformed command prevents a model input

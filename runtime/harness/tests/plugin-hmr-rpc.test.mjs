@@ -17,7 +17,7 @@ test('real CLI/RPC explicitly authorizes dynamic tools and rejects a host-exclud
  try {
   const agent=path.join(cwd,'agent');await mkdir(agent);
   const cli=path.join(cwd,'pi');
-  const node=path.join(root,'runtime/pi/runtime/node/bin/node'),entry=path.join(root,'runtime/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js');
+  const node=path.join(root,'runtime/node/bin/node'),entry=path.join(root,'runtime/agent/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js');
   await writeFile(cli,`#!/bin/sh\nexec '${node}' '${entry}' "$@"\n`);await chmod(cli,0o755);
   const extension=path.join(cwd,'hmr.ts');
   await writeFile(extension,`import {createKernel} from ${JSON.stringify(path.join(root,'runtime/harness/src/core/kernel.mjs'))};

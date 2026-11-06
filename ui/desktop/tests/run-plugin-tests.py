@@ -87,7 +87,7 @@ for line in sys.stdin:
         try:
             time.sleep(.2)
             assert server.poll() is None, (work / 'sshd.log').read_text()
-            subprocess.run([str(binary)], check=True, timeout=110, env=dict(os.environ, F_PLUGIN_TEST_ROOT=str(work), F_PLUGIN_TEST_FIXTURE=str(fixture), F_TEST_NODE=str(root.parents[1] / 'runtime/pi/runtime/node/bin/node'), F_REMOTE_TEST_SCRIPT=str(root / 'tests/remote-agent-regression.mjs'), F_REMOTE_EXTENSION=str(root.parents[1] / 'runtime/pi/agent/modules/fy-remote.ts'), F_WHITEBOARD_EXTENSION=str(root.parents[1] / 'runtime/pi/agent/modules/fy-whiteboard.ts')))
+            subprocess.run([str(binary)], check=True, timeout=110, env=dict(os.environ, F_PLUGIN_TEST_ROOT=str(work), F_PLUGIN_TEST_FIXTURE=str(fixture), F_TEST_NODE=str(root.parents[1] / 'runtime/node/bin/node'), F_REMOTE_TEST_SCRIPT=str(root / 'tests/remote-agent-regression.mjs'), F_REMOTE_EXTENSION=str(root.parents[1] / 'runtime/agent/adapters/fy-remote.ts'), F_WHITEBOARD_EXTENSION=str(root.parents[1] / 'runtime/agent/adapters/fy-whiteboard.ts')))
         finally:
             if server.poll() is None:
                 server.terminate()

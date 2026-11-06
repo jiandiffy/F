@@ -299,7 +299,7 @@ func check(_ value: Bool,_ name:String) { guard value else { fatalError("FAIL: "
 }
 '''
 (OUT/'Tests.swift').write_text(SOURCE)
-command=['swiftc','-parse-as-library','-target','arm64-apple-macos11.0','-module-cache-path',str(OUT/'cache'),'-o',str(OUT/'tests'),str(ROOT/'Core/Plugins.swift'),str(ROOT/'Core/Kernel.swift'),str(ROOT/'Core/UI/Chrome.swift'),*map(str,sorted((ROOT/'Plugins/Browser').glob('*.swift'))),str(OUT/'Tests.swift')]
+command=['swiftc','-parse-as-library','-target','arm64-apple-macos11.0','-module-cache-path',str(OUT/'cache'),'-o',str(OUT/'tests'),str(ROOT/'Core/Agent/RuntimePaths.swift'),str(ROOT/'Core/Plugins.swift'),str(ROOT/'Core/Kernel.swift'),str(ROOT/'Core/UI/Chrome.swift'),*map(str,sorted((ROOT/'Plugins/Browser').glob('*.swift'))),str(OUT/'Tests.swift')]
 print('OUTPUT:',OUT,flush=True)
 compiled=subprocess.run(command,capture_output=True,text=True,timeout=180);(OUT/'compile.log').write_text(compiled.stdout+compiled.stderr);print(compiled.stdout+compiled.stderr,flush=True)
 if compiled.returncode:raise SystemExit(compiled.returncode)
@@ -324,7 +324,7 @@ class ArticleFixture(BaseHTTPRequestHandler):
  def log_message(self,*args): pass
 server=ThreadingHTTPServer(('127.0.0.1',0),ArticleFixture)
 threading.Thread(target=server.serve_forever,daemon=True).start()
-env=dict(os.environ,F_BROWSER_TEST_ROOT=str(OUT/'data'),F_BROWSER_TEST_NODE=str(ROOT.parents[1]/'runtime/pi/runtime/node/bin/node'),F_BROWSER_TRANSPORT=(ROOT.parents[1]/'runtime/harness/src/browser/transport.mjs').as_uri(),F_BROWSER_TEST_ARTICLE_URL=f'http://127.0.0.1:{server.server_port}/article',F_BROWSER_SCREENSHOTS=str(OUT))
+env=dict(os.environ,F_BROWSER_TEST_ROOT=str(OUT/'data'),F_BROWSER_TEST_NODE=str(ROOT.parents[1]/'runtime/node/bin/node'),F_BROWSER_TRANSPORT=(ROOT.parents[1]/'runtime/harness/src/browser/transport.mjs').as_uri(),F_BROWSER_TEST_ARTICLE_URL=f'http://127.0.0.1:{server.server_port}/article',F_BROWSER_SCREENSHOTS=str(OUT))
 try:
  result=subprocess.run([str(OUT/'tests')],env=env,capture_output=True,text=True,timeout=180);(OUT/'tests.log').write_text(result.stdout+result.stderr);print(result.stdout+result.stderr,flush=True)
  if result.returncode==0:

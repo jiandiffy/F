@@ -1,9 +1,0 @@
-#!/bin/sh
-PI_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-export PATH="$PI_ROOT/runtime/node/bin:$PATH"
-export CODEBUDDY_CONFIG_DIR="$PI_ROOT/codebuddy/cbi"
-export CODEBUDDY_INTERNET_ENVIRONMENT=public
-export ACC_PRODUCT_CONFIG_PATH="$PI_ROOT/codebuddy/cbi/product.json"
-export DISABLE_AUTOUPDATER=1
-unset CODEBUDDY_API_KEY CODEBUDDY_BASE_URL
-exec "$PI_ROOT/runtime/node/bin/node" "$PI_ROOT/scripts/codebuddy-launch.cjs" cbi "$@"

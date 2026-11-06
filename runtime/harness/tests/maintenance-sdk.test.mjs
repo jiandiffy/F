@@ -5,9 +5,9 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { createAgentSession, ModelRuntime, DefaultResourceLoader, SettingsManager, SessionManager } from '../../pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js';
-import { getModel } from '../../pi/node_modules/@earendil-works/pi-ai/dist/compat.js';
-import { createAssistantMessageEventStream } from '../../pi/node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js';
+import { createAgentSession, ModelRuntime, DefaultResourceLoader, SettingsManager, SessionManager } from '../../agent/node_modules/@earendil-works/pi-coding-agent/dist/index.js';
+import { getModel } from '../../agent/node_modules/@earendil-works/pi-ai/dist/compat.js';
+import { createAssistantMessageEventStream } from '../../agent/node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js';
 import { createKernel } from '../src/core/kernel.mjs';
 import { mountMaintenance } from '../src/skills/maintenance.mjs';
 

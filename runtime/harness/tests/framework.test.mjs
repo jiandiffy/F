@@ -12,8 +12,10 @@ import { providerProfiles } from '../../../auth/providers.mjs';
 import { loadProfile } from '../src/profile.mjs';
 import { createKernel } from '../src/core/kernel.mjs';
 import { mountComputerUse } from '../../../packages/computer-use/agent/index.mjs';
-import mcp from '../../pi/agent/modules/fy-mcp.ts';
-import { McpClient, StdioTransport } from '../../pi/node_modules/@earendil-works/pi-mcp/dist/index.js';
+import mcp from '../../agent/adapters/fy-mcp.ts';
+import { McpClient, StdioTransport } from '../../agent/node_modules/@earendil-works/pi-mcp/dist/index.js';
+import { DatabaseSync } from 'node:sqlite';
+import { privatePath } from '../../../packages/versions/agent/secrets.mjs';
 
 async function fixture(t) { const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'f-framework-'))); t.after(() => rm(directory, { recursive: true, force: true })); return directory; }
 
@@ -44,6 +46,25 @@ test('workspace identity survives renames of display names and isolates sessions
   assert.equal(await readFile(path.join(store.directory, 'index.json'), 'utf8'), '[]');
 });
 
+test('workspace history survives runtime relocation and removal of the legacy alias without copying', async t => {
+  const dir = await fixture(t), old = path.join(dir, 'legacy-agent'), state = path.join(dir, 'F-state');
+  await mkdir(old);
+  const history = path.join(old, 'session.jsonl'); await writeFile(history, 'retained history');
+  const store = new WorkspaceStore(path.join(dir, 'F_data')), workspace = await store.register(dir);
+  const session = await store.session(workspace, { id: 'history', history });
+  const pending = await store.session(workspace, { id: 'pending', history: path.join(old, 'pending.jsonl') });
+  await rename(old, state); await symlink(state, old);
+  await store.session(workspace, { id: 'history', history });
+  await store.session(workspace, { id: 'pending', history: path.join(old, 'pending.jsonl') });
+  await rm(old);
+  assert.equal(await readFile(path.join(session, 'conversation.jsonl'), 'utf8'), 'retained history');
+  await writeFile(path.join(pending, 'conversation.jsonl'), 'first pending turn');
+  assert.equal(await readFile(path.join(state, 'pending.jsonl'), 'utf8'), 'first pending turn');
+  const db = new DatabaseSync(path.join(workspace.directory, 'state.db'));
+  try { assert.equal(db.prepare('SELECT history FROM sessions WHERE id=?').get('history').history, path.join(state, 'session.jsonl')); }
+  finally { db.close(); }
+});
+
 test('two scheduler processes claim a real command once, retain failure evidence, and cancel an active child', async t => {
   const dir = await fixture(t), output = path.join(dir, 'count');
   const a = new TaskScheduler(dir), b = new TaskScheduler(dir);
@@ -70,6 +91,11 @@ test('profiles, provider mapping and every workflow template load their actual c
   assert.deepEqual((await providerProfiles()).map(p => p.provider), ['dp', 'gpt', 'cbc', 'cbi']);
   for (const name of workflowNames) { const plan = await workflowPlan(name); assert.equal(plan.id, name); assert.equal(plan.children.length, 3); }
   await assert.rejects(workflowPlan('../other'), /Unknown/);
+});
+
+test('publication excludes relocated session state, login data and downloaded runtime while retaining F adapters', () => {
+  for (const file of ['runtime/agent/state/settings.json', 'runtime/agent/state/sessions/history.jsonl', 'runtime/agent/codebuddy/cbi/session.json', 'runtime/node/bin/node']) assert.equal(privatePath(file), true, file);
+  for (const file of ['runtime/agent/extensions/fy-harness.ts', 'runtime/agent/providers/cbi/src/config.ts']) assert.equal(privatePath(file), false, file);
 });
 
 test('desktop tool returns real image bytes, cleans temporary captures and reverses registration', async t => {

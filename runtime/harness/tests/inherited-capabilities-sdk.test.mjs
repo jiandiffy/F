@@ -4,10 +4,10 @@ import path from 'node:path';
 import os from 'node:os';
 import { mkdtemp,mkdir,rm,writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { createAgentSession,ModelRuntime,DefaultResourceLoader,SettingsManager,SessionManager } from '../../pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js';
-import { getModel } from '../../pi/node_modules/@earendil-works/pi-ai/dist/compat.js';
-import { createAssistantMessageEventStream } from '../../pi/node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js';
-import { getCurrentTools } from '../../pi/node_modules/@earendil-works/pi-ai/dist/utils/transcript.js';
+import { createAgentSession,ModelRuntime,DefaultResourceLoader,SettingsManager,SessionManager } from '../../agent/node_modules/@earendil-works/pi-coding-agent/dist/index.js';
+import { getModel } from '../../agent/node_modules/@earendil-works/pi-ai/dist/compat.js';
+import { createAssistantMessageEventStream } from '../../agent/node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js';
+import { getCurrentTools } from '../../agent/node_modules/@earendil-works/pi-ai/dist/utils/transcript.js';
 import { fileURLToPath } from 'node:url';
 import { startHarness } from '../src/index.mjs';
 

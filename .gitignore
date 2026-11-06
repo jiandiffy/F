@@ -8,18 +8,18 @@ runtime/harness/dist/
 __pycache__/
 
 # Local state and downloaded reference checkouts are never product commits.
-runtime/pi/agent/*.json
-runtime/pi/agent/model-list.txt
+runtime/agent/state/*.json
+runtime/agent/state/model-list.txt
 packages/zotero/*.md
 !packages/zotero/README.md
 packages/excalidraw/web/node_modules/
 packages/excalidraw/web/dist/
-vendor/deepseek-harness/
-vendor/cursor-plugins/
+/runtime/node/
+/runtime/pi
 *.tmp
 ui/desktop/Resources/whiteboard/
 ui/desktop/Resources/terminal/
-runtime/pi/agent/bin/
+runtime/agent/state/bin/
 /gui-mac
 
 F_data/*/

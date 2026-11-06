@@ -45,7 +45,7 @@ assert.match(hook.systemPrompt,/F remote project:/);
 assert.match(hook.systemPrompt,/whiteboard_/);
 const boardModule = await import(pathToFileURL(process.env.F_WHITEBOARD_EXTENSION).href);
 boardModule.default(api);
-const {leasesFor}=await import(pathToFileURL(path.resolve(path.dirname(process.env.F_WHITEBOARD_EXTENSION),'../../../harness/src/aios/leases.mjs')).href);
+const {leasesFor}=await import('../../../packages/agent-bus/agent/leases.mjs');
 const boardLease=await leasesFor({cwd:localProxy}).claim({owner:'isolated-fixture',rectangle:{x:0,y:0,width:2000,height:2000}});
 await call('whiteboard_create', { lease_id:boardLease.id,mode:'replace', layout:'vertical', nodes:[{id:'remote',label:'Remote project'}], edges:[] });
 const scene = JSON.parse(await readFile(path.join(process.env.F_BOARD_DIR,'scene.json'),'utf8'));
@@ -62,7 +62,7 @@ console.log('PASS: disabled whiteboard plugin removes its Agent tools');
 
 
 // The same DSH skill provider reads remote roots through the authenticated filesystem seam.
-const harnessRoot = path.resolve(path.dirname(process.env.F_WHITEBOARD_EXTENSION), '../../../harness');
+const harnessRoot = path.resolve(import.meta.dirname, '../../../runtime/harness');
 const { Context, SkillRegistry, filesystemSkills } = await import(pathToFileURL(path.join(harnessRoot,'dist/upstream.mjs')).href);
 const { remoteSkillFileSystem } = await import(pathToFileURL(path.join(harnessRoot,'src/adapters/remote-skills.mjs')).href);
 const skillContext = new Context();

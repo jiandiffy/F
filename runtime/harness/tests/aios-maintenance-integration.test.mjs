@@ -39,8 +39,8 @@ test('combined maintenance and AIOS hooks use one real sandbox and preserve both
  assert.equal(await readFile(path.join(f.root,'protected'),'utf8'),'keep');assert.equal(await readFile(path.join(f.directory,'test-output'),'utf8'),'verified');
 });
 test('verified legacy symlink roots gain maintenance tools while edits still require canonical source paths',async t=>{
- const f=await fixture(t);await mkdir(path.join(f.root,'ui/desktop'),{recursive:true});await mkdir(path.join(f.root,'runtime/pi'),{recursive:true});await writeFile(path.join(f.root,'F_MAINTENANCE.md'),'rules');
- for(const [name,target] of [['gui-mac','ui/desktop'],['pi','runtime/pi'],['F_MAINTENANCE.md','F_MAINTENANCE.md']])await symlink(path.join(f.root,target),path.join(f.directory,name));
+ const f=await fixture(t);await mkdir(path.join(f.root,'ui/desktop'),{recursive:true});await mkdir(path.join(f.root,'runtime/agent'),{recursive:true});
+ for(const [name,target] of [['gui-mac','ui/desktop'],['pi','runtime/agent']])await symlink(path.join(f.root,target),path.join(f.directory,name));
  assert.equal(maintenanceSourceContext(f.root,f.directory),true);assert.equal(maintenanceSourceContext(f.root,f.project),false);
  const ctx=f.context(f.directory);await f.emit('before_agent_start',{},ctx);
  await f.tools.get('maintenance_scope').execute('',{action:'claim',paths:['gui-mac']},null,null,ctx);assert.equal(f.calls.at(-1).action,'claim');

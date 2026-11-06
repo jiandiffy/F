@@ -54,8 +54,8 @@ printf '%s' "$$" > "$LOCK/pid"
 trap 'rm -rf "$LOCK"' EXIT
 
 # Finder/干净终端可能没有全局 Node；复用项目自带的 pi 运行时。
-if ! command -v npm >/dev/null 2>&1 && [ -x "$ROOT/runtime/pi/runtime/node/bin/npm" ]; then
-  export PATH="$ROOT/runtime/pi/runtime/node/bin:$PATH"
+if ! command -v npm >/dev/null 2>&1 && [ -x "$ROOT/runtime/node/bin/npm" ]; then
+  export PATH="$ROOT/runtime/node/bin:$PATH"
 fi
 
 sudo_if_needed() {
@@ -69,7 +69,7 @@ if [ "$BUILD_WEB" = "1" ] && [ -x "$ROOT/packages/excalidraw/web/node_modules/.b
 fi
 
 bash scripts/build-terminal.sh
-"$ROOT/runtime/pi/runtime/node/bin/node" "$ROOT/runtime/harness/scripts/build.mjs"
+"$ROOT/runtime/node/bin/node" "$ROOT/runtime/harness/scripts/build.mjs"
 
 # ---------- 2. 编译二进制到暂存目录 ----------
 STAGE="$PWD/.build"
@@ -96,7 +96,7 @@ fi
 AGENT_DIR="${PI_CODING_AGENT_DIR:-}"
 if [ -z "$AGENT_DIR" ] || [ ! -d "$AGENT_DIR/sessions" ]; then
   AGENT_DIR=""
-  for candidate in "$HOME/.pi/agent" "$HOME/runtime/pi/agent" "$ROOT/runtime/pi/agent"; do
+  for candidate in "$HOME/Library/Application Support/F/agent" "$ROOT/runtime/agent/state" "$HOME/.pi/agent" "$HOME/runtime/agent/state"; do
     if [ -d "$candidate/sessions" ]; then
       AGENT_DIR="$candidate"
       break
@@ -107,7 +107,7 @@ fi
 CLI_PATH="${PI_CLI:-}"
 if [ -z "$CLI_PATH" ] || [ ! -x "$CLI_PATH" ]; then
   CLI_PATH=""
-  for candidate in "$ROOT/runtime/pi/bin/pi" "$HOME/runtime/pi/bin/pi"; do
+  for candidate in "$ROOT/runtime/agent/bin/f" "$HOME/runtime/agent/bin/f"; do
     if [ -x "$candidate" ]; then
       CLI_PATH="$candidate"
       break
@@ -116,6 +116,7 @@ if [ -z "$CLI_PATH" ] || [ ! -x "$CLI_PATH" ]; then
 fi
 
 if [ -n "$AGENT_DIR" ]; then
+  AGENT_DIR="$(/usr/bin/python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$AGENT_DIR")"
   sudo_if_needed /usr/libexec/PlistBuddy -c "Set :PiAgentDir $AGENT_DIR" "$APP/Contents/Info.plist" \
     || sudo_if_needed /usr/libexec/PlistBuddy -c "Add :PiAgentDir string $AGENT_DIR" "$APP/Contents/Info.plist"
   echo "pi 会话目录：$AGENT_DIR/sessions"

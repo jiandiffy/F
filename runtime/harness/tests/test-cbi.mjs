@@ -51,7 +51,7 @@ async function run(name,prompt,required=[],options={}){
  return calls;
 }
 try{
- child=new ChildRPC(path.join(root,'runtime/pi/bin/pi'),['--session',path.join(temporary,'root.jsonl'),'--provider','cbi','--model',report.model,'--thinking','off','--tools',tools.join(',')],{
+ child=new ChildRPC(path.join(root,'runtime/agent/bin/f'),['--session',path.join(temporary,'root.jsonl'),'--provider','cbi','--model',report.model,'--thinking','off','--tools',tools.join(',')],{
   cwd:project,env:{...process.env,F_BOARD_DIR:board,F_CONVERSATION_DIR:conversation,F_LOCAL_PROJECT:project,F_DATA_DIRECTORY:path.join(temporary,'workspaces'),F_TASK_DIRECTORY:path.join(temporary,'tasks'),F_SOURCE_ROOT:root,F_DISABLED_PLUGINS:''},onEvent:event=>events.push(event)});
  const state=await child.request('get_state');assert.equal(state.model.provider,'cbi');assert.equal(state.model.id,report.model);
  await run('files-skills-board',`Perform these real tool calls in order:

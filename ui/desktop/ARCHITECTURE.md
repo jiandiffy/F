@@ -13,6 +13,7 @@
 | SSH 传输 | `Plugins/SSH/SSHTransport.swift` | 配置别名、连接参数、复用认证后的连接、远程文件操作 |
 | 远程文件 | `Plugins/SSH/RemoteBrowserView.swift` | 目录、文本编辑、保存与未保存状态 |
 | 底栏停靠区 | `Core/UI/SideDock.swift` | 功能选择页、左侧纵向进程标签、原位改名/关闭/新建、底部固定布局 |
+| 主界面滚动 | `Core/UI/WorkspaceScroll.swift` | 主界面应用的滚动容器、对话框遮挡余量与最低排版高度 |
 
 ## 扩展方式
 
@@ -82,6 +83,10 @@ flush 同时校验 WebKit 返回的文档 id 和调用时的磁盘基线，避�
 折叠时只有一行箭头，不写文字：向上表示展开，向下表示折叠。展开后对话内容和同一个箭头
 都在这个框里；点主页面收回一行。回到主对话时隐藏该框，改用对话自己的输入框。
 
+这五个应用的内容放在 `WorkspaceScrollView` 里。对话框占用的高度是文档末尾的滚动余量，
+被盖住的底部可以滚到对话框上方；可见高度低于最低排版高度时，内容仍按该高度排版并上下滚动，
+原生应用不会被压扁。对话框本身不随内容滚动，仍浮在右下角。
+
 ## SSH 登录与底栏停靠区
 底部栏固定白色，始终停在窗口底部。没有进程时展开显示已启用功能的单色选择图标；选择后
 图标消失，同一块白色面板左侧是一列纵向进程标签，右侧是当前进程页面，高度始终占满面板。
@@ -127,7 +132,7 @@ side agent 实现 `FProcessActivity`：只要它仍在执行请求或还有排�
 ## 远程 Agent
 
 模型调用、凭据与对话保留在本机。`PiRPC` 为远程项目提供 `F_REMOTE_PROJECT` 连接描述和
-对应的 `F_BOARD_DIR`。`runtime/pi/agent/modules/fy-remote.ts` 覆盖 read/write/edit/bash/ls/find/grep，
+对应的 `F_BOARD_DIR`。`runtime/agent/adapters/fy-remote.ts` 覆盖 read/write/edit/bash/ls/find/grep，
 所有项目文件与命令操作通过已认证的 OpenSSH ControlMaster 在远程执行；远程不需要安装 F。
 `user_bash` 同样走远程。远程断线会报错，不会回退到本机文件或另开一次密码登录。
 
@@ -173,7 +178,7 @@ Cmd+S 由原生文件菜单及 responder chain 处理；编辑和离开文档时
 终端保留原生 PTY 和 SSH 会话，使用随包分发的 xterm.js/fit 插件进行 VT 解析、光标、编辑、补全与屏幕尺寸同步。
 终端资源源文件位于 Plugins/Terminal/Web，build-terminal.sh 从锁定的 npm 依赖复制运行时与 MIT 许可证。
 
-F_MAINTENANCE.md 是内置 Agent 的自更新约定，Skills 模块在 F 源码项目任务中自动加载 f-maintenance 并注入该指南。
+skills/f-maintenance/references/maintenance.md 是内置 Agent 的自更新约定，Skills 模块在 F 源码项目任务中自动加载 f-maintenance 并注入该指南。
 prepare-update.py 构建隔离制品并运行回归后才发布清单。UpdateCoordinator 等发起更新的对话及停靠区空闲，
 为其他对话将原任务、session、模型、草稿、队列和手动暂停状态原子保存到各自画板目录的
 `interruptions/<updateID>.json`；等待 abort 确认和 agent_settled 后再次保存，未安全停稳或写盘失败则取消重启，
@@ -187,7 +192,7 @@ prepare-update.py 构建隔离制品并运行回归后才发布清单。UpdateCo
 
 ## Cordis 微内核与三个 Agent 能力
 
-Agent 的唯一扩展入口为 runtime/pi/agent/extensions/fy-harness.ts。它加载签名应用资源内的 Harness 组合，
+Agent 的唯一扩展入口为 runtime/agent/extensions/fy-harness.ts。它加载签名应用资源内的 Harness 组合，
 通过官方 Cordis 服务、inject 和 effect 管理模型、远程工具与画板适配器，以及 Skills/Subagent/Workflow。
 原生插件注册表通过 Core/Kernel.swift 挂载 FPlugin；服务依赖缺失时暂停消费者，恢复后重新挂载。
 三个无视图能力出现在 F/plugin 开关中，Workflow 依赖 Subagent；开关会使下一次 Agent 会话重新配置。

@@ -3,7 +3,7 @@ name: f-maintenance
 description: 修改、重构或测试 F 自身时使用。保留现有功能和用户数据，隔离构建与全功能回归通过后提交延迟更新。
 ---
 
-先读取本技能资源根下的 ../../F_MAINTENANCE.md，并遵守完整流程。该文件是自维护规则的唯一来源。
+先读取本技能资源根下的 references/maintenance.md，并遵守完整流程。该文件是自维护规则的唯一来源。
 
 开始前备份受影响源码与数据至 F 的 maintenance 目录；保持正在运行的 F 和 Agent 存活。
 实现后运行 harness 测试、现有全部原生回归和 cbi DeepSeek v4 flash 的真实模型工具链测试。

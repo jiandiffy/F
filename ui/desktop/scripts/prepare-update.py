@@ -27,13 +27,13 @@ coordination = load_module('f_maintenance_lock', source/'runtime/harness/src/ski
 
 def source_digest():
     digest = hashlib.sha256()
-    roots = ['runtime/harness/src', 'runtime/harness/upstream', 'runtime/harness/scripts', 'runtime/harness/tests', 'skills', 'packages', 'workflows', 'mcp', 'profiles', 'auth',
+    roots = ['runtime/harness/src', 'vendor/cordis', 'runtime/harness/scripts', 'runtime/harness/tests', 'skills', 'packages', 'workflows', 'mcp', 'profiles', 'auth',
              'ui/desktop/Core', 'ui/desktop/Plugins', 'ui/desktop/scripts', 'ui/desktop/tests',
-             'runtime/pi/agent/extensions', 'runtime/pi/agent/modules', 'runtime/pi/scripts', 'runtime/pi/vendor/pi-codebuddy-sdk-cbi/src',
-             'runtime/pi/vendor/pi-codebuddy-sdk-cbc/src', 'packages/excalidraw/web/src', 'packages/excalidraw/web/public']
-    files = [source/name for name in ['AGENTS.md', 'F_MAINTENANCE.md', 'ui/desktop/main.swift', 'ui/desktop/build.sh',
-             'ui/desktop/Info.plist', 'ui/desktop/PLUGIN_SPEC.md', 'ui/desktop/ARCHITECTURE.md', 'runtime/harness/README.md', 'runtime/pi/package.json', 'packages/excalidraw/web/package.json',
-             'packages/excalidraw/web/package-lock.json', 'runtime/harness/package.json', 'runtime/harness/package-lock.json', 'runtime/pi/package-lock.json']]
+             'runtime/agent/bin', 'runtime/agent/extensions', 'runtime/agent/adapters', 'runtime/agent/scripts', 'runtime/agent/providers/cbi/src',
+             'runtime/agent/providers/cbc/src', 'packages/excalidraw/web/src', 'packages/excalidraw/web/public']
+    files = [source/name for name in ['AGENTS.md', 'skills/f-maintenance/references/maintenance.md', 'ui/desktop/main.swift', 'ui/desktop/build.sh',
+             'ui/desktop/Info.plist', 'ui/desktop/PLUGIN_SPEC.md', 'ui/desktop/ARCHITECTURE.md', 'runtime/harness/README.md', 'runtime/agent/package.json', 'packages/excalidraw/web/package.json',
+             'packages/excalidraw/web/package-lock.json', 'runtime/harness/package.json', 'runtime/harness/package-lock.json', 'runtime/agent/package-lock.json']]
     files += [p for name in roots for p in (source/name).rglob('*') if p.is_file() and
               'node_modules' not in p.parts and '__pycache__' not in p.parts and
               not any(part in p.parts for part in ('dist', '.f')) and p.suffix not in ('.tmp',)]
@@ -88,7 +88,7 @@ def prepare(args, root):
     if args.no_whiteboard:
         command.append('--no-whiteboard')
     run('isolated-build', command)
-    node = str(source/'runtime/pi/runtime/node/bin/node')
+    node = str(source/'runtime/node/bin/node')
     # A maintenance Agent inherits its real board/lease paths. Tests must never use that ledger.
     harness_env = dict(os.environ, F_BOARD_DIR=str(validation/'harness-board'),
                        F_CONVERSATION_DIR=str(validation/'harness-conversation'),
@@ -97,7 +97,7 @@ def prepare(args, root):
     run('harness', [node, '--test', *[str(p) for p in sorted((source/'runtime/harness/tests').glob('*.test.mjs'))]], env=harness_env)
     run('layout', [node, str(source/'runtime/harness/scripts/verify-layout.mjs')])
     run('office', [str(source/'runtime/office/.venv/bin/python'), str(source/'runtime/office/tests.py')])
-    run('provider-tool-bridge', [node, '--test', str(source/'runtime/pi/scripts/test-codebuddy-tool-replay.mjs')])
+    run('provider-tool-bridge', [node, '--test', str(source/'runtime/agent/scripts/test-codebuddy-tool-replay.mjs')])
     run('computer-use', ['/usr/bin/python3', str(source/'ui/desktop/tests/run-computer-use-tests.py'), '--app', str(artifact)])
     for suite in ['run-whiteboard-tests.py', 'run-queue-tests.py', 'run-plugin-tests.py', 'run-file-browser-tests.py', 'run-history-navigation-tests.py', 'run-viewport-tests.py', 'run-versions-tests.py', 'run-project-mutation-tests.py', 'run-update-tests.py', 'run-project-stress-tests.py', 'run-daily-paper-tests.py', 'run-paper-media-tests.py', 'run-gmail-tests.py', 'run-browser-tests.py']:
         run(suite.removesuffix('.py'), ['/usr/bin/python3', str(source/'ui/desktop/tests'/suite)])

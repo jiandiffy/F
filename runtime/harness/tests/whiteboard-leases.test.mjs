@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import extension from '../../pi/agent/modules/fy-whiteboard.ts';
+import extension from '../../agent/adapters/fy-whiteboard.ts';
 import {leasesFor} from '../../../packages/agent-bus/agent/leases.mjs';
 
 test('concurrent diagrams preserve each other; out-of-scope deletes and stale writes are atomic', async () => {

@@ -18,9 +18,8 @@ final class DailyPaperWorker: @unchecked Sendable {
                       let script = Bundle.main.resourceURL?.appendingPathComponent("runtime/harness/src/daily-paper/cli.mjs"), FileManager.default.fileExists(atPath: script.path) else {
                     continuation.resume(throwing: DailyPaperError.message("论文链接更新资源缺失，请完成 F 更新后重试。")); return
                 }
-                let root = URL(fileURLWithPath: cli).deletingLastPathComponent().deletingLastPathComponent()
                 let child = Process(), input = Pipe(), output = Pipe()
-                child.executableURL = root.appendingPathComponent("runtime/node/bin/node")
+                child.executableURL = PiPaths.nodeURL(for: cli)
                 child.arguments = ["--use-env-proxy", script.path]
                 child.standardInput = input; child.standardOutput = output; child.standardError = FileHandle.nullDevice
                 do {

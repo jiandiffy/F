@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory(prefix='f-viewport-') as temporary:
     for item in (root/'Resources').iterdir():
         if item.name != 'whiteboard':
             (resources/item.name).symlink_to(item, target_is_directory=item.is_dir())
-    node = root.parents[1]/'runtime/pi/runtime/node/bin/node'
+    node = root.parents[1]/'runtime/node/bin/node'
     subprocess.run([str(node), str(root/'tests/whiteboard-bridge-regression.mjs')], check=True)
     subprocess.run([str(node), str(root.parents[1]/'packages/excalidraw/web/node_modules/vite/bin/vite.js'), 'build',
         '--configLoader', 'runner', '--outDir', str(resources/'whiteboard')], cwd=root.parents[1]/'packages/excalidraw/web', check=True)

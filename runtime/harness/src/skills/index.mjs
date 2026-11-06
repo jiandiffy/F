@@ -53,7 +53,7 @@ export async function mountSkills(ctx, { root, enabled = true }) {
       if (process.env.F_REMOTE_PROJECT || !maintenanceSourceContext(root, context.cwd)) return '';
       // Essential self-update rules must be present even before the model chooses a skill.
       const skill = await ctx.skills.get('f-maintenance', { cwd: cwdOf(context) });
-      return renderSkillContent(skill) + '\n\n' + await readFile(path.join(root, 'F_MAINTENANCE.md'), 'utf8');
+      return renderSkillContent(skill) + '\n\n' + await readFile(path.join(root, 'skills/f-maintenance/references/maintenance.md'), 'utf8');
     });
     ctx.host.on(ctx, 'tool_call', (event, context) => {
       if (!maintenanceSourceContext(root, context.cwd)) return;

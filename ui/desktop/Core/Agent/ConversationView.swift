@@ -42,7 +42,7 @@ final class ConversationView: NSView, WKNavigationDelegate {
     private var announcementSession: String?
     private var interruptionNotice: String?
     private var relocationCloseSnapshot: UpdateResume?
-    var sessionPath: String? { currentSessionPath ?? resumableSessionPath ?? currentChat?.path.path }
+    var sessionPath: String? { (currentSessionPath ?? resumableSessionPath ?? currentChat?.path.path).map { PiHistory.canonicalSessionPath($0) } }
     private(set) var boardID: String?
     /// 每条对话一块画板；没有 boardID 时才退回项目目录。
     var boardDirectory: URL {
@@ -55,7 +55,10 @@ final class ConversationView: NSView, WKNavigationDelegate {
     var isUnused: Bool {
         sessionPath == nil && currentChat == nil && !hasPendingWork && composer.draftText.isEmpty
     }
-    func ownsSession(_ path: String) -> Bool { sessionPath == path || currentChat?.path.path == path }
+    func ownsSession(_ path: String) -> Bool {
+        let canonical = PiHistory.canonicalSessionPath(path)
+        return sessionPath == canonical || currentChat.map { PiHistory.canonicalSessionPath($0.path.path) } == canonical
+    }
     private var inputHistory = PromptHistory(project: ProjectStore.initial())
     private var starting = false
     private var pendingStart: [() -> Void] = []
@@ -254,7 +257,7 @@ final class ConversationView: NSView, WKNavigationDelegate {
             bindInputHistory()
         }
         updateProject(URL(fileURLWithPath: resume.project))
-        currentChat = nil; currentSessionPath = nil; resumableSessionPath = resume.session
+        currentChat = nil; currentSessionPath = nil; resumableSessionPath = resume.session.map { PiHistory.canonicalSessionPath($0) }
         if let provider = resume.provider, let model = resume.model {
             selectedModel = AgentModel(provider: provider, id: model, name: resume.modelName ?? model, reasoning: true)
             composer.setModel(resume.modelName ?? model)
@@ -264,11 +267,11 @@ final class ConversationView: NSView, WKNavigationDelegate {
         composer.draftText = resume.mainDraft
         updateAnnouncement = nil
         announcementSession = nil
-        let messages = resume.session.map { PiConversation.load(from: URL(fileURLWithPath: $0)) } ?? []
+        let messages = resumableSessionPath.map { PiConversation.load(from: URL(fileURLWithPath: $0)) } ?? []
         seedInputHistory(from: messages)
         if resume.noticeProject == nil || resume.noticeProject == projectPath {
             updateAnnouncement = resume.announcement.isEmpty ? nil : resume.announcement
-            announcementSession = resume.noticeSession ?? resume.session
+            announcementSession = (resume.noticeSession ?? resume.session).map { PiHistory.canonicalSessionPath($0) }
         }
         interruption = resume.interruption
         interruptionNotice = interruption.map { _ in "此对话因 F 自更新中断，历史、未完成任务与队列已保存。重启后依据会话上下文继续；手动暂停的队列保持暂停。" }
@@ -280,10 +283,11 @@ final class ConversationView: NSView, WKNavigationDelegate {
         present(messages)
     }
 
-    func attachUpdateNotice(_ text: String, session: String?) {
+    func attachUpdateNotice(_ text: String, session legacySession: String?) {
+        let session = legacySession.map { PiHistory.canonicalSessionPath($0) }
         updateAnnouncement = text.isEmpty ? nil : text
         announcementSession = session
-        if (currentChat?.path.path ?? sessionPath) == session {
+        if session.map({ ownsSession($0) }) ?? (sessionPath == nil) {
             present(session.map { PiConversation.load(from: URL(fileURLWithPath: $0)) } ?? [])
         }
     }
@@ -305,7 +309,7 @@ final class ConversationView: NSView, WKNavigationDelegate {
         bindInputHistory()
         currentChat = nil
         currentSessionPath = nil
-        resumableSessionPath = session
+        resumableSessionPath = session.map { PiHistory.canonicalSessionPath($0) }
         activePrompt = nil
         interruptionNotice = nil
         restoringUpdateSelection = false
@@ -1083,7 +1087,8 @@ final class ConversationView: NSView, WKNavigationDelegate {
         switchSession(path: chat.path.path, completion: completion)
     }
 
-    private func switchSession(path: String, completion: @escaping () -> Void) {
+    private func switchSession(path legacyPath: String, completion: @escaping () -> Void) {
+        let path = PiHistory.canonicalSessionPath(legacyPath)
         if currentSessionPath == path {
             completion()
             return
@@ -1451,7 +1456,7 @@ final class ConversationView: NSView, WKNavigationDelegate {
         else { return }
         js("window.F.setMessages(\(json))")
         if let interruptionNotice { jsCall("addUpdateNotice", interruptionNotice) }
-        let displayedSession = currentChat?.path.path ?? sessionPath
+        let displayedSession = currentChat.map { PiHistory.canonicalSessionPath($0.path.path) } ?? sessionPath
         if let notice = updateAnnouncement, displayedSession == announcementSession,
            !messages.contains(where: { $0.role == .assistant && $0.text.trimmingCharacters(in: .whitespacesAndNewlines) == notice }) {
             jsCall("addUpdateNotice", notice)
@@ -1516,25 +1521,6 @@ final class ConversationView: NSView, WKNavigationDelegate {
             object["defaultModel"] as? String ?? "pi",
             object["defaultThinkingLevel"] as? String ?? "high"
         )
-    }
-}
-
-enum PiPaths {
-    static var cliPath: String? {
-        if let path = Bundle.main.object(forInfoDictionaryKey: "PiCLIPath") as? String,
-           !path.isEmpty,
-           FileManager.default.isExecutableFile(atPath: path) {
-            return path
-        }
-        if let path = ProcessInfo.processInfo.environment["PI_CLI"],
-           FileManager.default.isExecutableFile(atPath: path) {
-            return path
-        }
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        for path in ["\(home)/Desktop/fy/F/runtime/pi/bin/pi", "\(home)/runtime/pi/bin/pi"] {
-            if FileManager.default.isExecutableFile(atPath: path) { return path }
-        }
-        return nil
     }
 }
 

@@ -165,10 +165,11 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(len(self.store.operate('reader', 'status')['leases']), 1)
 
     def test_digest_covers_source_resources_not_generated_bundles(self):
-        names = ['AGENTS.md', 'F_MAINTENANCE.md', 'ui/desktop/main.swift', 'ui/desktop/build.sh',
-                 'ui/desktop/Info.plist', 'ui/desktop/PLUGIN_SPEC.md', 'ui/desktop/ARCHITECTURE.md', 'runtime/harness/README.md', 'runtime/pi/package.json', 'packages/excalidraw/web/package.json',
-                 'packages/excalidraw/web/package-lock.json', 'runtime/harness/package.json', 'runtime/harness/package-lock.json', 'runtime/pi/package-lock.json',
-                 'ui/desktop/Resources/update-helper.py', 'ui/desktop/Resources/Other/template.html']
+        names = ['AGENTS.md', 'skills/f-maintenance/references/maintenance.md', 'ui/desktop/main.swift', 'ui/desktop/build.sh',
+                 'ui/desktop/Info.plist', 'ui/desktop/PLUGIN_SPEC.md', 'ui/desktop/ARCHITECTURE.md', 'runtime/harness/README.md', 'runtime/agent/package.json', 'packages/excalidraw/web/package.json',
+                 'packages/excalidraw/web/package-lock.json', 'runtime/harness/package.json', 'runtime/harness/package-lock.json', 'runtime/agent/package-lock.json',
+                 'ui/desktop/Resources/update-helper.py', 'ui/desktop/Resources/Other/template.html',
+                 'runtime/agent/bin/f', 'vendor/cordis/vendor/cordis/src/index.ts']
         for name in names:
             file = self.source/name
             file.parent.mkdir(parents=True, exist_ok=True)
@@ -180,7 +181,8 @@ class MaintenanceTests(unittest.TestCase):
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_text('generated')
             self.assertEqual(before, prepare.source_digest())
-            for name in ['ui/desktop/Resources/update-helper.py', 'ui/desktop/Resources/Other/template.html']:
+            for name in ['ui/desktop/Resources/update-helper.py', 'ui/desktop/Resources/Other/template.html',
+                         'runtime/agent/bin/f', 'vendor/cordis/vendor/cordis/src/index.ts']:
                 file = self.source/name
                 file.write_text('changed')
                 self.assertNotEqual(before, prepare.source_digest())

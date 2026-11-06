@@ -25,7 +25,7 @@
 验证：
 
 ```sh
-runtime/pi/runtime/node/bin/node --test runtime/harness/tests/daily-paper.test.mjs runtime/harness/tests/gmail.test.mjs
+runtime/node/bin/node --test runtime/harness/tests/daily-paper.test.mjs runtime/harness/tests/gmail.test.mjs
 python3 ui/desktop/Plugins/DailyPaper/run-tests.py
 python3 ui/desktop/tests/run-daily-paper-tests.py
 ```

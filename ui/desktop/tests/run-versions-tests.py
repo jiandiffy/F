@@ -23,7 +23,7 @@ def main():
     print('Versions regression artifacts: ' + str(work), flush=True)
     repo = work / 'repo'; repo.mkdir()
     home = work / 'home'; home.mkdir()
-    env = dict(os.environ, HOME=str(home), GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='/dev/null')
+    env = dict(os.environ, HOME=str(home), GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='/dev/null', PI_CLI=str(source / 'runtime/agent/bin/f'))
 
     def git(*args):
         return subprocess.check_output(['/usr/bin/git', '-C', str(repo), *args], stderr=subprocess.STDOUT, env=env).decode().strip()
@@ -55,10 +55,10 @@ def main():
     (work / 'main.swift').write_text(swift.replace('__TEST_DIR__', str(work)))
     (work / 'Stubs.swift').write_text('import Foundation\n' +
         'enum BoardStore { static let appSupport = URL(fileURLWithPath: ' + json.dumps(str(work / 'data')) + ') }\n' +
-        'enum RemoteProjects { static func load(_ url: URL) -> String? { nil } }\n' +
-        'enum PiPaths { static var cliPath: String? { ' + json.dumps(str(source / 'runtime/pi/bin/pi')) + ' } }\n')
+        'enum RemoteProjects { static func load(_ url: URL) -> String? { nil } }\n')
     command = ['swiftc', '-module-cache-path', str(work / 'module-cache'),
         str(source / 'ui/desktop/Core/Kernel.swift'), str(source / 'ui/desktop/Core/Plugins.swift'),
+        str(source / 'ui/desktop/Core/Agent/RuntimePaths.swift'),
         str(work / 'Stubs.swift'), *map(str, sorted(versions.glob('*.swift'))),
         str(work / 'main.swift'), '-o', str(work / 'versions-tests')]
     with (work / 'compile.log').open('w') as log:

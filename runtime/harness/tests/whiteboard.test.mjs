@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
 import os from 'node:os';import path from 'node:path';
-import extension from '../../pi/agent/modules/fy-whiteboard.ts';
+import extension from '../../agent/adapters/fy-whiteboard.ts';
 import {leasesFor} from '../../../packages/agent-bus/agent/leases.mjs';
 
 test('corrupt or malformed board fails without replacing existing user data',async()=>{

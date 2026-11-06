@@ -100,25 +100,26 @@ extension RootView {
                 leftOpen = left; rightOpen = right; bottomOpen = false; layout()
                 let controlsBottom = min(bottomButton.frame.minY, rightButton.frame.minY)
                 for id in ["gmail", "daily-paper"] {
-                    let application = plugins.plugin(id)!.view
-                    expect(application.frame.maxY <= controlsBottom - 8, "\(id) content stays clear of F host controls")
+                    let application = workspaceContentFrameForTest(id)
+                    expect(application.maxY <= controlsBottom - 8, "\(id) content stays clear of F host controls")
                 }
                 let browser = plugins.plugin("browser") as! BrowserPlugin
                 browser.view.layout()
+                let page = workspaceContentFrameForTest("browser")
                 let toolbar = browser.toolbarView!
                 toolbar.layout()
                 let field = toolbar.subviews.compactMap { $0 as? NSTextField }.first { $0.isEditable }!
-                expect(browser.view.frame == conversationFrame(), "browser page stays in the workspace")
-                expect(toolbar.superview === self && toolbar.frame.minX >= browser.view.frame.minX && toolbar.frame.maxX <= browser.view.frame.maxX, "browser toolbar stays between the expanded sidebars")
+                expect(page == conversationFrame(), "browser page stays in the workspace")
+                expect(toolbar.superview === self && toolbar.frame.minX >= page.minX && toolbar.frame.maxX <= page.maxX, "browser toolbar stays between the expanded sidebars")
                 expect(field.placeholderString?.isEmpty != false, "search field has no placeholder")
                 expect(!field.isHidden, "narrow windows keep room for navigation and search with both sidebars open")
                 if !field.isHidden {
                     let rect = convert(field.frame, from: toolbar)
                     expect(abs(rect.midY - bottomButton.frame.midY) < 1, "search aligns with sidebar and bottom buttons")
                     expect(rect.minX >= addButton.frame.maxX + 8 && rect.maxX <= bottomButton.frame.minX - 8, "search never covers host buttons with either sidebar open")
-                    expect(abs(rect.maxX - (min(browser.view.frame.maxX, bottomButton.frame.minX) - 20)) < 1, "search fills the available row up to the sidebar or software buttons")
+                    expect(abs(rect.maxX - (min(page.maxX, bottomButton.frame.minX) - 20)) < 1, "search fills the available row up to the sidebar or software buttons")
                     let back = toolbar.subviews.first { $0.identifier?.rawValue == "back" }!
-                    expect(abs(convert(back.frame, from: toolbar).minX - (max(browser.view.frame.minX, addButton.frame.maxX) + 8)) < 1, "navigation begins after the sidebar or software buttons with one inset")
+                    expect(abs(convert(back.frame, from: toolbar).minX - (max(page.minX, addButton.frame.maxX) + 8)) < 1, "navigation begins after the sidebar or software buttons with one inset")
                     for item in toolbar.subviews {
                         let itemRect = convert(item.frame, from: toolbar)
                         expect(!left || !itemRect.intersects(leftPanel.frame), "browser control never overlaps the open left sidebar")
@@ -127,13 +128,62 @@ extension RootView {
                     }
                     expect(field.toolTip == nil && toolbar.toolTip == nil, "browser input has no hover shortcut hint")
                 }
-                expect(whiteboardView.frame == conversationFrame(), "whiteboard keeps its existing web chrome insets")
+                expect(workspaceContentFrameForTest("whiteboard") == conversationFrame(), "whiteboard keeps its existing web chrome insets")
             }
         }
         showApplication("browser")
         expect(plugins.plugin("browser")!.toolbarView?.isHidden == false, "browser toolbar is visible only with its workspace")
         showConversation(nil)
         expect(plugins.plugin("browser")!.toolbarView?.isHidden == true, "browser toolbar hides when returning to chat")
+    }
+    /// 主界面应用的对话框遮挡与高度不足时的上下滚动。
+    func checkWorkspaceScroll() {
+        let saved = frame, wasLeft = leftOpen, wasRight = rightOpen, wasBottom = bottomOpen
+        defer { frame = saved; leftOpen = wasLeft; rightOpen = wasRight; bottomOpen = wasBottom; layout() }
+        leftOpen = false; rightOpen = false; bottomOpen = false
+        let applications = ["whiteboard", "browser", "versions", "daily-paper", "gmail"]
+        func workspace(_ id: String) -> NSRect {
+            ["whiteboard", "browser"].contains(id) ? conversationFrame() : FChrome.nativeWorkspaceFrame(in: conversationFrame())
+        }
+        func present(_ id: String) {
+            showWorkspaceOnlyForTest(id)
+            layout(); layoutSubtreeIfNeeded()
+        }
+        frame.size = NSSize(width: 900, height: 600)
+        layout(); layoutSubtreeIfNeeded()
+        for id in applications {
+            present(id)
+            let host = workspaceScrollForTest(id)
+            expect(!host.isHidden, "\(id) shows its scrolling workspace")
+            expect(host.frame == workspace(id), "\(id) workspace fills the window")
+            expect(host.dialogInset == overlayForTest.occupiedHeight && host.dialogInset > 0,
+                   "\(id) keeps the dialog height scrollable")
+            expect(abs(workspaceContentFrameForTest(id).height - host.frame.height) < 1,
+                   "\(id) content fits the available height")
+        }
+        // 高度不够时内容按最低高度排版，滚到底可以拉出被对话框盖住的部分。
+        frame.size = NSSize(width: 900, height: 320)
+        layout(); layoutSubtreeIfNeeded()
+        for id in applications {
+            present(id)
+            let host = workspaceScrollForTest(id)
+            expect(host.frame.height < WorkspaceScrollView.minimumContentHeight, "\(id) window is shorter than its content")
+            expect(abs(workspaceContentFrameForTest(id).height - WorkspaceScrollView.minimumContentHeight) < 1,
+                   "\(id) keeps a usable height when the window is short")
+            let limit = WorkspaceScrollView.minimumContentHeight + host.dialogInset - host.frame.height
+            host.contentView.scroll(to: NSPoint(x: 0, y: limit))
+            host.reflectScrolledClipView(host.contentView)
+            expect(abs(host.contentView.bounds.origin.y - limit) < 1, "\(id) scrolls the covered part above the dialog")
+            host.contentView.scroll(to: .zero)
+            host.reflectScrolledClipView(host.contentView)
+        }
+        // 回到主对话后不再需要对话框余量，内容也不会停在滚动位置。
+        showConversation(nil)
+        layout(); layoutSubtreeIfNeeded()
+        for id in applications {
+            let host = workspaceScrollForTest(id)
+            expect(host.isHidden && host.dialogInset == 0, "\(id) workspace hides and drops the dialog inset in chat")
+        }
     }
     func resumeFixtureDrafts() {
         conversationView.setUpdateFixture()
@@ -320,7 +370,20 @@ extension RootView {
     var appRowsForTest: [String] { leftSidebar.idsForTest }
     var boardForTest: WhiteboardView { whiteboardView }
     var overlayForTest: AgentOverlayDock { overlayDock }
+    /// 主界面应用的内容区域，换算到窗口坐标；它可能比可见区域高（可滚动）。
+    func workspaceContentFrameForTest(_ id: String) -> NSRect {
+        let view = plugins.plugin(id)!.view
+        return convert(view.frame, from: view.superview!)
+    }
+    func workspaceScrollForTest(_ id: String) -> WorkspaceScrollView { workspaceScrolls[id]! }
     func showApplicationForTest(_ id: String) { showApplication(id) }
+    /// 只切换工作区可见性，不启动插件进程：测试不真正激活 Gmail/Versions。
+    func showWorkspaceOnlyForTest(_ id: String) {
+        mode = .application(id)
+        for plugin in plugins.plugins where plugin.placement == .workspace {
+            setWorkspaceVisible(plugin, plugin.id == id)
+        }
+    }
     func showConversationForTest() { showConversation(nil) }
     func toggleBottomForTest() { toggleBottom() }
     func newChatForTest() { newChat() }
@@ -448,6 +511,7 @@ func pluginToggleChecks() {    let defaults = UserDefaults.standard
     let rootView = RootView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
     rootView.checkNativeWorkspaceChromeForTest()
     rootView.checkComposerHasNoShortcutHints()
+    rootView.checkWorkspaceScroll()
     // 窗口级对话框：应用界面里始终可见，折叠成一行箭头，回到主对话时隐藏。
     rootView.showApplicationForTest("whiteboard")
     rootView.layoutSubtreeIfNeeded()

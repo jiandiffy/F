@@ -1,27 +1,41 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdir, readFile, realpath, symlink, lstat, readlink, stat } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { mkdir, readFile, realpath, symlink, lstat, readlink, stat, rename, unlink } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { applicationData, atomicJSON, withLock } from './store.mjs';
 
 const identity = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
 const safeID = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(value);
 
-// A link is an index into existing data, never a second writable copy.
-async function linkExisting(target, destination, future = false) {
-  if (!target) return;
+async function canonicalTarget(target, future) {
   try { target = await realpath(target); }
   catch (error) {
     if (!future || error.code !== 'ENOENT') throw error;
     target = path.join(await realpath(path.dirname(target)), path.basename(target));
   }
+  return target;
+}
+
+// A link is an index into existing data, never a second writable copy.
+async function linkExisting(target, destination, future = false) {
+  if (!target) return;
+  target = await canonicalTarget(target, future);
   try {
     const info = await lstat(destination);
-    if (!info.isSymbolicLink() || path.resolve(path.dirname(destination), await readlink(destination)) !== target) throw Error('Workspace entry conflicts with existing data: ' + destination);
+    if (!info.isSymbolicLink()) throw Error('Workspace entry conflicts with existing data: ' + destination);
+    const linked = path.resolve(path.dirname(destination), await readlink(destination));
+    if (linked !== target) {
+      const resolved = await canonicalTarget(linked, future).catch(error => { if (error.code === 'ENOENT') return linked; throw error; });
+      if (resolved !== target) throw Error('Workspace entry conflicts with existing data: ' + destination);
+      const temp = destination + '.' + randomUUID();
+      try { await symlink(target, temp); await rename(temp, destination); }
+      finally { await unlink(temp).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
+    }
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
     await symlink(target, destination);
   }
+  return target;
 }
 
 export class WorkspaceStore {
@@ -68,8 +82,8 @@ export class WorkspaceStore {
     const directory = path.join(workspace.directory, 'sessions', id);
     return withLock(directory + '.lock', async () => {
       for (const child of ['session_apps', 'artifacts']) await mkdir(path.join(directory, child), { recursive: true, mode: 0o700 });
-      await linkExisting(history, path.join(directory, 'conversation.jsonl'), true);
-      await linkExisting(board, path.join(directory, 'session_apps/excalidraw'));
+      history = await linkExisting(history, path.join(directory, 'conversation.jsonl'), true);
+      board = await linkExisting(board, path.join(directory, 'session_apps/excalidraw'));
       const db = new DatabaseSync(path.join(workspace.directory, 'state.db'));
       try {
         db.exec('PRAGMA busy_timeout=5000');

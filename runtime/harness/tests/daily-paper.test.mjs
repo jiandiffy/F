@@ -108,9 +108,10 @@ test('text-only model repairs invalid structure once and refuses an incorrect pr
   const p = await paper({ id: '2401.12345' }); let calls = 0, disposed = false;
   const rpcFactory = (_pi, args) => {
     assert.ok(args.includes('--no-tools') && args.includes('--no-mcp') && args.includes('--no-context-files'));
+    assert.ok(args.includes('/fixture/runtime/agent/providers/cbi/src/index.ts'), 'text-only analysis loads the provider from its integrated location');
     return { request: async () => ({ model: { provider: 'cbi', id: modelID } }), prompt: async () => ({ stopReason: 'completed', output: [{ type: 'text', text: calls++ === 0 ? '{"title":"incomplete"}' : JSON.stringify(analysis('Repaired')) }] }), dispose: async () => { disposed = true; } };
   };
-  assert.equal((await analyzePaper(p, { pi: '/fixture/runtime/pi/bin/pi', cwd: '/tmp', rpcFactory })).title, 'Repaired');
+  assert.equal((await analyzePaper(p, { pi: '/fixture/runtime/agent/bin/f', cwd: '/tmp', rpcFactory })).title, 'Repaired');
   assert.equal(calls, 2); assert.equal(disposed, true);
-  await assert.rejects(analyzePaper(p, { pi: '/fixture/runtime/pi/bin/pi', rpcFactory: () => ({ request: async () => ({ model: { provider: 'other', id: modelID } }), dispose: async () => {} }) }), /指定/);
+  await assert.rejects(analyzePaper(p, { pi: '/fixture/runtime/agent/bin/f', rpcFactory: () => ({ request: async () => ({ model: { provider: 'other', id: modelID } }), dispose: async () => {} }) }), /指定/);
 });
