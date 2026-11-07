@@ -6,4 +6,4 @@ Use natural language to ask F to add any functionality you want.
 
 [中文](README.md)
 
-![F demo](ui/demo.webp)
+![F demo](ui/demo-hd.webp)

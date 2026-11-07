@@ -6,4 +6,4 @@
 
 [EN](README.en.md)
 
-![F 功能演示](ui/demo.webp)
+![F 功能演示](ui/demo-hd.webp)
