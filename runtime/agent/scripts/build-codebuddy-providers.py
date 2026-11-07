@@ -1,26 +1,13 @@
 """Create isolated cbc/cbi instances of the pinned upstream pi-codebuddy-sdk."""
 from pathlib import Path
-import shutil, json, os
+import shutil
 import runpy
 patch_tool_replay=runpy.run_path(str(Path(__file__).with_name('patch-codebuddy-tool-replay.py')))['patch']
 root=Path(__file__).resolve().parents[1]
-data=Path(os.environ.get('F_USER_DATA_DIRECTORY', Path.home()/'Library/Application Support/F'))
 source=root/'node_modules/pi-codebuddy-sdk'
 if not (source/'src/index.ts').exists():
  raise SystemExit('请先按照 package-lock.json 安装 pi-codebuddy-sdk，再重建提供方。')
 for region,environment in [('cbc','internal'),('cbi','public')]:
- product=json.loads((root/'node_modules/@tencent-ai/codebuddy-code/product.json').read_text())
- if region=='cbc':
-  def merge(base, overlay):
-   for key,value in overlay.items():
-    if isinstance(value,dict) and isinstance(base.get(key),dict): merge(base[key],value)
-    else: base[key]=value
-  merge(product,json.loads((root/'node_modules/@tencent-ai/codebuddy-code/product.internal.json').read_text()))
- product['authentication']['id']='fy-pi-'+region
- product_path=data/'auth/codebuddy'/region/'product.json'
- product_path.parent.mkdir(parents=True,exist_ok=True)
- product_path.write_text(json.dumps(product,indent=2)+'\n')
- product_path.chmod(0o600)
  dest=root/'providers'/region
  if dest.exists(): shutil.rmtree(dest)
  shutil.copytree(source/'src',dest/'src')
@@ -38,9 +25,9 @@ for region,environment in [('cbc','internal'),('cbi','public')]:
   if path.name=='index.ts':
    text=text.replace('PROVIDER_NAME = "CodeBuddy"',f'PROVIDER_NAME = "{region}"')
   if path.name=='config.ts':
-   text='import network from "../../../scripts/network.cjs";\nimport { fileURLToPath } from "node:url";\n'+text
+   text='import network from "../../../scripts/network.cjs";\nimport profiles from "../../../scripts/codebuddy-profile.cjs";\nimport { fileURLToPath } from "node:url";\n'+text
    path_definitions = f'''\nconst runtimeRoot = fileURLToPath(new URL("../../..", import.meta.url));
-const configDirectory = join(process.env.F_USER_DATA_DIRECTORY ?? join(homedir(), "Library/Application Support/F"), "auth/codebuddy/{region}");
+const configDirectory = profiles.ensureProfile("{region}");
 '''
    start=text.index('export function loadConfig(cwd: string): Config {')
    text=text[:start]+f'''export function loadConfig(cwd: string): Config {{

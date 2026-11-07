@@ -74,7 +74,7 @@ final class PiRPC {
         proc.arguments = ["--mode", "rpc"]
         proc.currentDirectoryURL = workingDirectory
 
-        var env = ProcessInfo.processInfo.environment
+        var env = PiPaths.environment(for: cliPath, agentDirectory: PiHistory.agentDirectory()?.deletingLastPathComponent())
         env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
         // 避免继承当前 pi 会话/模型相关变量，应用自己用 switch_session 指定会话
         for key in env.keys where key.hasPrefix("PI_") && key != "PI_CODING_AGENT_DIR" {

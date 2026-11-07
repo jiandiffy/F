@@ -21,7 +21,7 @@ enum PiHistory {
         let fm = FileManager.default
         var candidates: [String] = []
 
-        if let configured = Bundle.main.object(forInfoDictionaryKey: "PiAgentDir") as? String,
+        if !PiPaths.isBundled, let configured = Bundle.main.object(forInfoDictionaryKey: "PiAgentDir") as? String,
            !configured.isEmpty {
             candidates.append(configured)
         }
@@ -34,6 +34,7 @@ enum PiHistory {
 
         let home = fm.homeDirectoryForCurrentUser.path
         candidates += [
+            PiPaths.defaultAgentDirectory.path,
             "\(home)/Library/Application Support/F/agent",
             "\(home)/.pi/agent",
         ]

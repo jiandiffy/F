@@ -255,7 +255,7 @@ final class RootView: NSView {
         windowDragMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.keyDown, .leftMouseDown, .leftMouseDragged, .leftMouseUp]
         ) { [weak self] event in
-            guard let self else { return event }
+            guard let self, event.window === self.window else { return event }
             if event.type == .leftMouseDown, self.overlayDock.isExpanded, !self.overlayDock.isHidden,
                let hit = self.window?.contentView?.hitTest(event.locationInWindow),
                hit !== self.overlayDock, !hit.isDescendant(of: self.overlayDock) {

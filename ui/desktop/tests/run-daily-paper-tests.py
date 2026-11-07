@@ -15,9 +15,6 @@ subprocess.run(['/usr/bin/python3', str(plugin_tests)], check=True)
 source = (root / 'main.swift').read_text().split('\nlet app = NSApplication.shared\n')[0]
 source += '\n' + '\n'.join(p.read_text() for folder in ['Core', 'Plugins'] for p in sorted((root / folder).rglob('*.swift') if folder == 'Core' else (root / folder).glob('*/*.swift')))
 # Redirect application-owned storage, not just boards. Never construct a test plugin on user data.
-original = 'return base.appendingPathComponent("F", isDirectory: true)'
-assert source.count(original) == 1
-source = source.replace(original, 'return URL(fileURLWithPath: ProcessInfo.processInfo.environment["F_PAPER_TEST_ROOT"]!).appendingPathComponent("support")')
 tests = r'''
 func check(_ value: @autoclosure () -> Bool, _ reason: String) {
     guard value() else { fputs("FAIL: \(reason)\n", stderr); exit(1) }
@@ -63,6 +60,7 @@ extension RootView {
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let rootURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["F_PAPER_TEST_ROOT"]!)
+check(BoardStore.appSupport.standardizedFileURL.path == rootURL.appendingPathComponent("support").standardizedFileURL.path, "application storage uses the isolated test root")
 let project = rootURL.appendingPathComponent("project")
 let otherProject = rootURL.appendingPathComponent("other-project")
 try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
@@ -130,4 +128,4 @@ with tempfile.TemporaryDirectory(prefix='f-daily-paper-host-') as directory:
     swift.write_text(source + '\n' + tests)
     binary = bundle / 'MacOS/PaperTests'
     subprocess.run(['swiftc', '-O', str(swift), '-o', str(binary)], check=True)
-    subprocess.run([str(binary)], check=True, timeout=40, env=dict(os.environ, F_PAPER_TEST_ROOT=str(work)))
+    subprocess.run([str(binary)], check=True, timeout=40, env=dict(os.environ, F_PAPER_TEST_ROOT=str(work), F_USER_DATA_DIRECTORY=str(work / "support")))

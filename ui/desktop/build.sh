@@ -53,8 +53,11 @@ fi
 printf '%s' "$$" > "$LOCK/pid"
 trap 'rm -rf "$LOCK"' EXIT
 
-# Finder/干净终端可能没有全局 Node；复用项目自带的 pi 运行时。
-if ! command -v npm >/dev/null 2>&1 && [ -x "$ROOT/runtime/node/bin/npm" ]; then
+# Source and DMG builds use the same pinned Node, even if another npm is installed.
+if [ ! -x "$ROOT/runtime/node/bin/node" ] || [ ! -d "$ROOT/runtime/agent/node_modules/@earendil-works/pi-coding-agent" ]; then
+  /usr/bin/python3 scripts/bootstrap-runtime.py
+fi
+if [ -x "$ROOT/runtime/node/bin/node" ]; then
   export PATH="$ROOT/runtime/node/bin:$PATH"
 fi
 

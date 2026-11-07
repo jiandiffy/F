@@ -98,9 +98,11 @@ def prepare(args, root):
     run('layout', [node, str(source/'runtime/harness/scripts/verify-layout.mjs')])
     run('office', [str(source/'runtime/office/.venv/bin/python'), str(source/'runtime/office/tests.py')])
     run('provider-tool-bridge', [node, '--test', str(source/'runtime/agent/scripts/test-codebuddy-tool-replay.mjs')])
+    run('provider-login', [node, '--test', str(source/'runtime/agent/scripts/provider-auth.test.mjs')])
+    run('native-provider-login', ['/usr/bin/python3', str(source/'ui/desktop/tests/run-provider-login-tests.py')])
     run('computer-use', ['/usr/bin/python3', str(source/'ui/desktop/tests/run-computer-use-tests.py'), '--app', str(artifact)])
     for suite in ['run-whiteboard-tests.py', 'run-queue-tests.py', 'run-plugin-tests.py', 'run-file-browser-tests.py', 'run-history-navigation-tests.py', 'run-viewport-tests.py', 'run-versions-tests.py', 'run-project-mutation-tests.py', 'run-update-tests.py', 'run-project-stress-tests.py', 'run-daily-paper-tests.py', 'run-paper-media-tests.py', 'run-gmail-tests.py', 'run-browser-tests.py']:
-        run(suite.removesuffix('.py'), ['/usr/bin/python3', str(source/'ui/desktop/tests'/suite)])
+        run(suite.removesuffix('.py'), ['/usr/bin/python3', str(source/'ui/desktop/tests'/suite)], env=dict(os.environ, F_TEST_APP=str(artifact)))
     # Test the exact frozen Harness carried by the signed candidate, with real model calls.
     run('cbi-deepseek-flash', [node, str(source/'runtime/harness/tests/test-cbi.mjs'), '--report', str(validation/'cbi.json'), '--native-report', str(report_path)],
         env=dict(os.environ, F_HARNESS_DIR=str(artifact/'Contents/Resources/runtime/harness')))
