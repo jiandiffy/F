@@ -4,6 +4,6 @@
 
 你可以通过自然语言，让F为你添加任何你想要的功能。
 
-[EN](README.en.md) [DMG](https://github.com/jiandiffy/F/releases)
+[EN](README.en.md)
 
 ![F 功能演示](ui/demo.webp)
