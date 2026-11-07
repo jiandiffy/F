@@ -13,7 +13,8 @@ if [ -z "${HTTPS_PROXY:-}${https_proxy:-}${ALL_PROXY:-}${all_proxy:-}" ]; then
   fi
 fi
 export no_proxy="${NO_PROXY:-localhost,127.0.0.1,::1}"
-export npm_config_cache="$F_AGENT_RUNTIME/state/cache/npm"
+F_CACHE_PATH="$("$F_AGENT_RUNTIME/../node/bin/node" "$F_AGENT_RUNTIME/scripts/runtime-paths.cjs" cache)"
+export npm_config_cache="$F_CACHE_PATH/npm"
 F_LOAD_COMPOSITION=1
 for arg in "$@"; do
   case "$arg" in --no-extensions|-ne) F_LOAD_COMPOSITION=0 ;; esac

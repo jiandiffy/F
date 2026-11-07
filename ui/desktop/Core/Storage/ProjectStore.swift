@@ -83,9 +83,7 @@ enum BoardStore {
     private static let rootKey = "BoardStorageRoot"
 
     static var appSupport: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        return base.appendingPathComponent("F", isDirectory: true)
+        PiPaths.userDataDirectory
     }
 
     static var defaultRoot: URL { appSupport.appendingPathComponent("boards", isDirectory: true) }

@@ -20,6 +20,11 @@ packages/excalidraw/web/dist/
 ui/desktop/Resources/whiteboard/
 ui/desktop/Resources/terminal/
 runtime/agent/state/bin/
+/runtime/agent/state
+/runtime/agent/codebuddy
+/runtime/agent/node_modules/
+/auth/deepseek/deepseek-api.md
+/ui/desktop/dist/
 /gui-mac
 
 F_data/*/

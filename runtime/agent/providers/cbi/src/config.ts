@@ -1,4 +1,5 @@
 import network from "../../../scripts/network.cjs";
+import profiles from "../../../scripts/codebuddy-profile.cjs";
 import { fileURLToPath } from "node:url";
 import type { SettingSource } from "./index-types.js";
 import type { ModelOverrides } from "./models.js";
@@ -95,4 +96,4 @@ export function loadConfig(cwd: string): Config {
 }
 
 const runtimeRoot = fileURLToPath(new URL("../../..", import.meta.url));
-const configDirectory = join(process.env.F_USER_DATA_DIRECTORY ?? join(homedir(), "Library/Application Support/F"), "auth/codebuddy/cbi");
+const configDirectory = profiles.ensureProfile("cbi");

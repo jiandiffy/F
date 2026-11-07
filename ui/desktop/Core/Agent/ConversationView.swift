@@ -30,6 +30,7 @@ final class ConversationView: NSView, WKNavigationDelegate {
     private var currentSessionPath: String?
     private var resumableSessionPath: String?
     private var models: [AgentModel] = []
+    private var modelLoginGeneration = 0
     private var thinkingLevels: [String] = []
     private var selectedModel: AgentModel?
     private var selectedThinking = "high"
@@ -1131,7 +1132,10 @@ final class ConversationView: NSView, WKNavigationDelegate {
             self.jsCall("showError", prefix + (response["error"] as? String ?? "未知错误"))
             self.advanceTurn()
         }
-        agent.request(["type": "set_model", "provider": model.provider, "modelId": model.id]) { [weak self] response in
+        ProviderLogin.shared.ensure(model.provider, relativeTo: window) { [weak self] authenticated in
+            guard let self, self.activeTurnID == turn else { return }
+            guard authenticated else { fail("", ["error": "未完成模型登录，请重试。"]); return }
+            self.agent.request(["type": "set_model", "provider": model.provider, "modelId": model.id]) { [weak self] response in
             guard let self, self.activeTurnID == turn else { return }
             guard response["success"] as? Bool == true else { fail("无法切换模型：", response); return }
             self.agent.request(["type": "set_thinking_level", "level": thinking]) { [weak self] response in
@@ -1141,6 +1145,7 @@ final class ConversationView: NSView, WKNavigationDelegate {
                 self.composer.setThinking(thinking)
                 self.restoringUpdateSelection = false
                 completion()
+            }
             }
         }
     }
@@ -1176,12 +1181,12 @@ final class ConversationView: NSView, WKNavigationDelegate {
         refreshCatalog()
     }
 
-    private func refreshCatalog() {
+    private func refreshCatalog(completion: (() -> Void)? = nil) {
         agent.request(["type": "get_available_models"]) { [weak self] response in
             guard let self,
                   let data = response["data"] as? [String: Any],
                   let list = data["models"] as? [[String: Any]]
-            else { return }
+            else { completion?(); return }
             self.models = list.compactMap { item in
                 guard let provider = item["provider"] as? String,
                       let id = item["id"] as? String else { return nil }
@@ -1192,6 +1197,7 @@ final class ConversationView: NSView, WKNavigationDelegate {
                     reasoning: item["reasoning"] as? Bool ?? false
                 )
             }
+            completion?()
         }
 
         agent.request(["type": "get_available_thinking_levels"]) { [weak self] response in
@@ -1372,8 +1378,12 @@ final class ConversationView: NSView, WKNavigationDelegate {
 
         let menu = NSMenu()
         let grouped = Dictionary(grouping: models, by: { $0.provider })
-        for provider in grouped.keys.sorted() {
+        for provider in Set(ProviderLogin.sources + Array(grouped.keys)).sorted() {
             let submenu = NSMenu()
+            if grouped[provider]?.isEmpty ?? true {
+                let login = NSMenuItem(title: "登录并加载模型…", action: #selector(pickProvider(_:)), keyEquivalent: "")
+                login.target = self; login.representedObject = provider; submenu.addItem(login)
+            }
             for model in (grouped[provider] ?? []).sorted(by: { $0.name < $1.name }) {
                 let item = NSMenuItem(title: model.name, action: #selector(pickModel(_:)), keyEquivalent: "")
                 item.target = self
@@ -1414,6 +1424,32 @@ final class ConversationView: NSView, WKNavigationDelegate {
               payload.count == 2,
               let model = models.first(where: { $0.provider == payload[0] && $0.id == payload[1] })
         else { return }
+
+        modelLoginGeneration += 1
+        let request = modelLoginGeneration
+        ProviderLogin.shared.ensure(model.provider, relativeTo: window) { [weak self] authenticated in
+            guard let self, self.modelLoginGeneration == request, authenticated else { return }
+            self.selectModel(model)
+        }
+    }
+
+    @objc private func pickProvider(_ item: NSMenuItem) {
+        guard let provider = item.representedObject as? String else { return }
+        modelLoginGeneration += 1
+        let request = modelLoginGeneration
+        ProviderLogin.shared.ensure(provider, relativeTo: window) { [weak self] authenticated in
+            guard let self, self.modelLoginGeneration == request, authenticated else { return }
+            self.ensureStarted {
+                self.refreshCatalog { [weak self] in
+                    guard let self, self.modelLoginGeneration == request else { return }
+                    if let model = self.models.first(where: { $0.provider == provider }) { self.selectModel(model) }
+                    else { self.jsCall("showError", "已登录，模型列表暂未返回，请重新打开模型菜单。") }
+                }
+            }
+        }
+    }
+
+    private func selectModel(_ model: AgentModel) {
 
         selectedModel = model
         AgentSelection.model = model

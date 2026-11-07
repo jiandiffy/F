@@ -23,9 +23,11 @@ def probe_real_pi_eof():
     project.mkdir()
     (agent / 'sessions').mkdir(parents=True)
     (work / 'home').mkdir()
-    info = plistlib.loads((root / 'F.app/Contents/Info.plist').read_bytes())
-    distribution = Path(info['PiCLIPath']).resolve().parent.parent
-    node = distribution / 'runtime/node/bin/node'
+    app = Path(os.environ.get('F_TEST_APP', root/'F.app'))
+    info = plistlib.loads((app/'Contents/Info.plist').read_bytes())
+    cli_path = app/'Contents/Resources/runtime/agent/bin/f' if info.get('FDistribution') == 'dmg' else Path(info['PiCLIPath'])
+    distribution = cli_path.resolve().parent.parent
+    node = distribution.parent / 'node/bin/node'
     cli = distribution / 'node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js'
     package = json.loads((distribution / 'node_modules/@earendil-works/pi-coding-agent/package.json').read_text())
     environment = dict(os.environ)
